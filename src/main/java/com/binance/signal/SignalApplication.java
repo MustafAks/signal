@@ -24,10 +24,6 @@ public class SignalApplication {
     private static final int PERIOD = 14; // RSI hesaplama periyodu
     private static final Map<String, String> SYMBOLS_AND_API_URLS = new HashMap<>();
 
-    private static String TELEGRAM_BOT_TOKEN;
-    private static String TELEGRAM_CHAT_ID;
-
-
     private static String previousTrendDirection = "";
 
     private static final String SYMBOLS_AND_API_URLS_FILE = "SymbolsAndApiUrl";
