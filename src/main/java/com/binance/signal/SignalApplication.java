@@ -515,14 +515,6 @@ public class SignalApplication {
         // Trend yönü ve Fibonacci seviyelerini sonuçlara ekle
         newTrendDirection += " Destek Seviyesi: " + supportLevel + ", Direnç Seviyesi: " + resistanceLevel;
 
-        if (newTrendDirection.equals("Long Position") || newTrendDirection.equals("Short Position")) {
-            // Pozisyon açma sinyali üretildiğinde, pozisyon kapatma sinyalini kontrol ediyoruz
-            if (shouldCloseTrade(newTrendDirection, closingPrices, rsi, macd, stochasticOscillator, bollingerBands)) {
-                // Eğer kapatma koşulları sağlanırsa Telegram'a kapatma sinyali gönderiyoruz
-                sendTelegramMessage("Close Position", symbol, currentPrice, supportLevel, resistanceLevel);
-            }
-        }
-
         if (rsi > 70 && sma < ema && macd[0] > macd[1] && stochasticOscillator[stochasticOscillator.length - 1] > 80 && closingPrices[closingPrices.length - 1] > bollingerBands[0] && adx > 25) {
             // Parabolic SAR'ı kullanarak karşılaştırma yapın
             if (parabolicSAR[parabolicSAR.length - 1] < closingPrices[closingPrices.length - 1]) {
@@ -541,6 +533,23 @@ public class SignalApplication {
             newTrendDirection = "Trend Belirsiz";
         }
 
+        // Yeni pozisyon açma sinyali gelirse ve önceki trend yönü farklıysa Telegram'a mesaj gönder
+        if (!newTrendDirection.equals(previousTrendDirection)) {
+            if (newTrendDirection.equals("Long Position") || newTrendDirection.equals("Short Position")) {
+                // Pozisyon açma sinyali üretildiğinde, pozisyon kapatma sinyalini kontrol ediyoruz
+                if (shouldCloseTrade(newTrendDirection, closingPrices, rsi, macd, stochasticOscillator, bollingerBands)) {
+                    // Eğer kapatma koşulları sağlanırsa Telegram'a kapatma sinyali gönderiyoruz
+                    sendTelegramMessage("Close Position", symbol, currentPrice, supportLevel, resistanceLevel);
+                } else {
+                    sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
+                }
+            } else if (newTrendDirection.equals("Trend Belirsiz")) {
+                // Trend belirsiz olduğunda da mesaj göndermek isterseniz bu kısmı kullanabilirsiniz
+                sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
+            }
+            previousTrendDirection = newTrendDirection;
+        }
+
 
         // Update the trend direction
         trendDirection = newTrendDirection;
@@ -551,7 +560,6 @@ public class SignalApplication {
             // Update the previous trend direction
             previousTrendDirection = newTrendDirection;
         }
-
 
         // Sonuçları yazdır
         System.out.println("-------------------------");
@@ -582,6 +590,7 @@ public class SignalApplication {
 
         return false;
     }
+
 
     // Function to send a message to a Telegram bot
     private static void sendTelegramMessage(String action, String symbol, double currentPrice, double supportLevel, double resistanceLevel) {
