@@ -51,7 +51,6 @@ public class SignalApplication {
     }
 
 
-
     public static void main(String[] args) {
         while (true) {
             try {
@@ -463,15 +462,6 @@ public class SignalApplication {
         // Yeni pozisyon açma sinyali gelirse ve önceki trend yönü farklıysa Telegram'a mesaj gönder
         if (!newTrendDirection.equals(previousTrendDirection)) {
             if (newTrendDirection.equals("Long Position") || newTrendDirection.equals("Short Position")) {
-                // Pozisyon açma sinyali üretildiğinde, pozisyon kapatma sinyalini kontrol ediyoruz
-                if (shouldCloseTrade(newTrendDirection, closingPrices, rsi, macd, stochasticOscillator, bollingerBands)) {
-                    // Eğer kapatma koşulları sağlanırsa Telegram'a kapatma sinyali gönderiyoruz
-                    sendTelegramMessage("Close Position", symbol, currentPrice, supportLevel, resistanceLevel);
-                } else {
-                    sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
-                }
-            } else if (newTrendDirection.equals("Trend Belirsiz")) {
-                // Trend belirsiz olduğunda da mesaj göndermek isterseniz bu kısmı kullanabilirsiniz
                 sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
             }
             previousTrendDirection = newTrendDirection;
@@ -506,18 +496,6 @@ public class SignalApplication {
         System.out.println("-------------------------");
     }
 
-    private static boolean shouldCloseTrade(String currentTrendDirection, double[] closingPrices, double rsi, double[] macd, double[] stochasticOscillator, double[] bollingerBands) {
-        double latestClosePrice = closingPrices[closingPrices.length - 1];
-
-        if (currentTrendDirection.equals("Long Position")) {
-            return macd[0] < macd[1] && rsi < 70 && stochasticOscillator[stochasticOscillator.length - 1] < 80 && latestClosePrice < bollingerBands[1];
-        } else if (currentTrendDirection.equals("Short Position")) {
-            return macd[0] > macd[1] && rsi > 30 && stochasticOscillator[stochasticOscillator.length - 1] > 20 && latestClosePrice > bollingerBands[2];
-        }
-
-        return false;
-    }
-
 
     // Function to send a message to a Telegram bot
     private static void sendTelegramMessage(String action, String symbol, double currentPrice, double supportLevel, double resistanceLevel) {
@@ -529,9 +507,6 @@ public class SignalApplication {
                 break;
             case "Short Position":
                 message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
-                break;
-            case "Close Position":
-                message = "🔵 <b>Kapama Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
                 break;
             default:
                 message = action + ": " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
