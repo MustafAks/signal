@@ -8,11 +8,15 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @SpringBootApplication
 public class SignalApplication {
@@ -20,112 +24,39 @@ public class SignalApplication {
     private static final int PERIOD = 14; // RSI hesaplama periyodu
     private static final Map<String, String> SYMBOLS_AND_API_URLS = new HashMap<>();
 
+    private static String TELEGRAM_BOT_TOKEN;
+    private static String TELEGRAM_CHAT_ID;
+
+
     private static String previousTrendDirection = "";
 
+    private static final String SYMBOLS_AND_API_URLS_FILE = "SymbolsAndApiUrl";
 
     static {
-        // Takip etmek istediğiniz kripto para çiftlerini ve ilgili API URL'lerini burada saklayın
-        SYMBOLS_AND_API_URLS.put("BTCUSDT", "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ETHUSDT", "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("SUIUSDT", "https://api.binance.com/api/v3/klines?symbol=SUIUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BNBUSDT", "https://api.binance.com/api/v3/klines?symbol=BNBUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("APTUSDT", "https://api.binance.com/api/v3/klines?symbol=APTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("DOGEUSDT", "https://api.binance.com/api/v3/klines?symbol=DOGEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("PEPEUSDT", "https://api.binance.com/api/v3/klines?symbol=PEPEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("XRPUSDT", "https://api.binance.com/api/v3/klines?symbol=XRPUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ARBUSDT", "https://api.binance.com/api/v3/klines?symbol=ARBUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("INJUSDT", "https://api.binance.com/api/v3/klines?symbol=INJUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ASTRUSDT", "https://api.binance.com/api/v3/klines?symbol=ASTRUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AGLDUSDT", "https://api.binance.com/api/v3/klines?symbol=AGLDUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("JSTUSDT", "https://api.binance.com/api/v3/klines?symbol=JSTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("TRBUSDT", "https://api.binance.com/api/v3/klines?symbol=TRBUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("FRONTUSDT", "https://api.binance.com/api/v3/klines?symbol=FRONTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("LOOMUSDT", "https://api.binance.com/api/v3/klines?symbol=LOOMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("VITEUSDT", "https://api.binance.com/api/v3/klines?symbol=VITEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("TRXUSDT", "https://api.binance.com/api/v3/klines?symbol=TRXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("APEUSDT", "https://api.binance.com/api/v3/klines?symbol=APEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("IOSTUSDT", "https://api.binance.com/api/v3/klines?symbol=IOSTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("GFTUSDT", "https://api.binance.com/api/v3/klines?symbol=GFTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("MAVUSDT", "https://api.binance.com/api/v3/klines?symbol=MAVUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AVAXUSDT", "https://api.binance.com/api/v3/klines?symbol=AVAXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BADGERUSDT", "https://api.binance.com/api/v3/klines?symbol=BADGERUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ARKMUSDT", "https://api.binance.com/api/v3/klines?symbol=ARKMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("COMBOUSDT", "https://api.binance.com/api/v3/klines?symbol=COMBOUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("CYBERUSDT", "https://api.binance.com/api/v3/klines?symbol=CYBERUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("FLOKIUSDT", "https://api.binance.com/api/v3/klines?symbol=FLOKIUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("PENDLEUSDT", "https://api.binance.com/api/v3/klines?symbol=PENDLEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("WLDUSDT", "https://api.binance.com/api/v3/klines?symbol=WLDUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("SEIUSDT", "https://api.binance.com/api/v3/klines?symbol=SEIUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("1INCHUSDT", "https://api.binance.com/api/v3/klines?symbol=1INCHUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AAVEUSDT", "https://api.binance.com/api/v3/klines?symbol=AAVEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ACAUSDT", "https://api.binance.com/api/v3/klines?symbol=ACAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ACHUSDT", "https://api.binance.com/api/v3/klines?symbol=ACHUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ACMUSDT", "https://api.binance.com/api/v3/klines?symbol=ACMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ADAUSDT", "https://api.binance.com/api/v3/klines?symbol=ADAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ADXUSDT", "https://api.binance.com/api/v3/klines?symbol=ADXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AERGOUSDT", "https://api.binance.com/api/v3/klines?symbol=AERGOUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AGIXUSDT", "https://api.binance.com/api/v3/klines?symbol=AGIXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AKROUSDT", "https://api.binance.com/api/v3/klines?symbol=AKROUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALCXUSDT", "https://api.binance.com/api/v3/klines?symbol=ALCXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALGOUSDT", "https://api.binance.com/api/v3/klines?symbol=ALGOUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALICEUSDT", "https://api.binance.com/api/v3/klines?symbol=ALICEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALPACAUSDT", "https://api.binance.com/api/v3/klines?symbol=ALPACAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALPHAUSDT", "https://api.binance.com/api/v3/klines?symbol=ALPHAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ALPINEUSDT", "https://api.binance.com/api/v3/klines?symbol=ALPINEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ANKRUSDT", "https://api.binance.com/api/v3/klines?symbol=ANKRUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AUCTIONUSDT", "https://api.binance.com/api/v3/klines?symbol=AUCTIONUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("AXSUSDT", "https://api.binance.com/api/v3/klines?symbol=AXSUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BAKEUSDT", "https://api.binance.com/api/v3/klines?symbol=BAKEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BICOUSDT", "https://api.binance.com/api/v3/klines?symbol=BICOUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BNXUSDT", "https://api.binance.com/api/v3/klines?symbol=BNXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("CAKEUSDT", "https://api.binance.com/api/v3/klines?symbol=CAKEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("DYDXUSDT", "https://api.binance.com/api/v3/klines?symbol=DYDXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("EDUUSDT", "https://api.binance.com/api/v3/klines?symbol=EDUUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("FETUSDT", "https://api.binance.com/api/v3/klines?symbol=FETUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("FTTUSDT", "https://api.binance.com/api/v3/klines?symbol=FTTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("GLMRUSDT", "https://api.binance.com/api/v3/klines?symbol=GLMRUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("LINKUSDT", "https://api.binance.com/api/v3/klines?symbol=LINKUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("MASKUSDT", "https://api.binance.com/api/v3/klines?symbol=MASKUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("LUNCUSDT", "https://api.binance.com/api/v3/klines?symbol=LUNCUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("YGGUSDT", "https://api.binance.com/api/v3/klines?symbol=YGGUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BCHUSDT", "https://api.binance.com/api/v3/klines?symbol=BCHUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("EOSUSDT", "https://api.binance.com/api/v3/klines?symbol=EOSUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("LTCUSDT", "https://api.binance.com/api/v3/klines?symbol=LTCUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("XLMUSDT", "https://api.binance.com/api/v3/klines?symbol=XLMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("XMRUSDT", "https://api.binance.com/api/v3/klines?symbol=XMRUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("DASHUSDT", "https://api.binance.com/api/v3/klines?symbol=DASHUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ZECUSDT", "https://api.binance.com/api/v3/klines?symbol=ZECUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("XTZUSDT", "https://api.binance.com/api/v3/klines?symbol=XTZUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ATOMUSDT", "https://api.binance.com/api/v3/klines?symbol=ATOMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("IOTAUSDT", "https://api.binance.com/api/v3/klines?symbol=IOTAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("VETUSDT", "https://api.binance.com/api/v3/klines?symbol=VETUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("NEOUSDT", "https://api.binance.com/api/v3/klines?symbol=NEOUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("QTUMUSDT", "https://api.binance.com/api/v3/klines?symbol=QTUMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ZRXUSDT", "https://api.binance.com/api/v3/klines?symbol=ZRXUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("ZILUSDT", "https://api.binance.com/api/v3/klines?symbol=ZILUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("COMPUSDT", "https://api.binance.com/api/v3/klines?symbol=COMPUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("SXPUSDT", "https://api.binance.com/api/v3/klines?symbol=SXPUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("KAVAUSDT", "https://api.binance.com/api/v3/klines?symbol=KAVAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BANDUSDT", "https://api.binance.com/api/v3/klines?symbol=BANDUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("WAVESUSDT", "https://api.binance.com/api/v3/klines?symbol=WAVESUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("YFIUSDT", "https://api.binance.com/api/v3/klines?symbol=YFIUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("CRVUSDT", "https://api.binance.com/api/v3/klines?symbol=CRVUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("RUNEUSDT", "https://api.binance.com/api/v3/klines?symbol=RUNEUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("SUSHIUSDT", "https://api.binance.com/api/v3/klines?symbol=SUSHIUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("SOLUSDT", "https://api.binance.com/api/v3/klines?symbol=SOLUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("BLZUSDT", "https://api.binance.com/api/v3/klines?symbol=BLZUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("KSMUSDT", "https://api.binance.com/api/v3/klines?symbol=KSMUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("NEARUSDT", "https://api.binance.com/api/v3/klines?symbol=NEARUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("MATICUSDT", "https://api.binance.com/api/v3/klines?symbol=MATICUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("HOTUSDT", "https://api.binance.com/api/v3/klines?symbol=HOTUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("OCEANUSDT", "https://api.binance.com/api/v3/klines?symbol=OCEANUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("C98USDT", "https://api.binance.com/api/v3/klines?symbol=C98USDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("GALAUSDT", "https://api.binance.com/api/v3/klines?symbol=GALAUSDT&interval=4h");
-        SYMBOLS_AND_API_URLS.put("OXTUSDT", "https://api.binance.com/api/v3/klines?symbol=OXTUSDT&interval=4h");
+        loadSymbolsAndApiUrlsFromFile();
     }
 
-    public static void main(String[] args) {
+    private static void loadSymbolsAndApiUrlsFromFile() {
+        try {
+            Path path = Paths.get("src/main/resources/" + SignalApplication.SYMBOLS_AND_API_URLS_FILE);
 
+            try (Stream<String> lines = Files.lines(path)) {
+                lines.forEach(line -> {
+                    String[] parts = line.split(",");
+                    if (parts.length == 2) {
+                        SYMBOLS_AND_API_URLS.put(parts[0].trim(), parts[1].trim());
+                    }
+                });
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("SymbolsAndApiUrl dosyası okunamadı!");
+        }
+    }
+
+
+
+    public static void main(String[] args) {
         while (true) {
             try {
                 for (Map.Entry<String, String> entry : SYMBOLS_AND_API_URLS.entrySet()) {
