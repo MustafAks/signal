@@ -321,19 +321,17 @@ public class SignalApplication {
     }
 
 
-    private static double[] calculateFibonacciRetracementLevels(double[] highPrices, double[] lowPrices) {
-        double[] fibonacciLevels = new double[5];
 
-        if (highPrices.length < 50 || lowPrices.length < 50) {
+    private static double[] calculateFibonacciRetracementLevels(double[] highPrices, double[] lowPrices) {
+        double[] fibonacciLevels = new double[5]; // 5 Fibonacci Retracement seviyesi hesaplayacağız
+
+        if (highPrices.length < 2 || lowPrices.length < 2) {
+            // Yeterli veri yoksa, hesaplama yapmayı beklemeyi tercih edebilirsiniz.
             return fibonacciLevels;
         }
 
-        // Son 50 mumun en yüksek ve en düşük fiyatlarını al
-        double[] last50Highs = Arrays.copyOfRange(highPrices, highPrices.length - 50, highPrices.length);
-        double[] last50Lows = Arrays.copyOfRange(lowPrices, lowPrices.length - 50, lowPrices.length);
-
-        double recentHigh = Arrays.stream(last50Highs).max().getAsDouble();
-        double recentLow = Arrays.stream(last50Lows).min().getAsDouble();
+        double recentHigh = highPrices[highPrices.length - 1];
+        double recentLow = lowPrices[lowPrices.length - 1];
 
         // %23.6 seviyesi
         fibonacciLevels[0] = recentHigh - ((recentHigh - recentLow) * 0.236);
@@ -477,6 +475,7 @@ public class SignalApplication {
     }
 
 
+
     private static void analyzeTrend(String symbol, String dateStr, double[] closingPrices, double[] highPrices, double[] lowPrices) {
         // RSI hesapla
         double rsi = calculateRSI(closingPrices);
@@ -502,6 +501,7 @@ public class SignalApplication {
         double[] parabolicSAR = calculateParabolicSAR(highPrices, lowPrices);
 
 
+
         // Trend yönünü belirle
         String trendDirection = "";
         String newTrendDirection = "";
@@ -510,10 +510,9 @@ public class SignalApplication {
         double supportLevel = fibonacciLevels[1]; // Örnek olarak %38.2 seviyesini destek seviyesi olarak kullanıyoruz
         double resistanceLevel = fibonacciLevels[2]; // Örnek olarak %50.0 seviyesini direnç seviyesi olarak kullanıyoruz
 
-        double currentPrice = getCoinPrice(symbol);
-
-        // Trend yönü ve Fibonacci seviyelerini sonuçlara ekle
+        // Trend yönünü ve Fibonacci seviyelerini sonuçlara ekle
         newTrendDirection += " Destek Seviyesi: " + supportLevel + ", Direnç Seviyesi: " + resistanceLevel;
+
 
         if (rsi > 70 && sma < ema && macd[0] > macd[1] && stochasticOscillator[stochasticOscillator.length - 1] > 80 && closingPrices[closingPrices.length - 1] > bollingerBands[0] && adx > 25) {
             // Parabolic SAR'ı kullanarak karşılaştırma yapın
@@ -532,23 +531,7 @@ public class SignalApplication {
         } else {
             newTrendDirection = "Trend Belirsiz";
         }
-
-        // Yeni pozisyon açma sinyali gelirse ve önceki trend yönü farklıysa Telegram'a mesaj gönder
-        if (!newTrendDirection.equals(previousTrendDirection)) {
-            if (newTrendDirection.equals("Long Position") || newTrendDirection.equals("Short Position")) {
-                // Pozisyon açma sinyali üretildiğinde, pozisyon kapatma sinyalini kontrol ediyoruz
-                if (shouldCloseTrade(newTrendDirection, closingPrices, rsi, macd, stochasticOscillator, bollingerBands)) {
-                    // Eğer kapatma koşulları sağlanırsa Telegram'a kapatma sinyali gönderiyoruz
-                    sendTelegramMessage("Close Position", symbol, currentPrice, supportLevel, resistanceLevel);
-                } else {
-                    sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
-                }
-            } else if (newTrendDirection.equals("Trend Belirsiz")) {
-                // Trend belirsiz olduğunda da mesaj göndermek isterseniz bu kısmı kullanabilirsiniz
-                sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
-            }
-            previousTrendDirection = newTrendDirection;
-        }
+        double currentPrice = getCoinPrice(symbol);
 
 
         // Update the trend direction
@@ -556,10 +539,14 @@ public class SignalApplication {
         // Check if the trend direction has changed
         if (!newTrendDirection.equals(previousTrendDirection)) {
             // Send a message to Telegram
-            sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
+            sendTelegramMessage("Trend direction for " +
+                    symbol + " " + "Current price : " +
+                    currentPrice + " " +" has changed to: " + newTrendDirection);
+
             // Update the previous trend direction
             previousTrendDirection = newTrendDirection;
         }
+
 
         // Sonuçları yazdır
         System.out.println("-------------------------");
@@ -579,42 +566,13 @@ public class SignalApplication {
         System.out.println("-------------------------");
     }
 
-    private static boolean shouldCloseTrade(String currentTrendDirection, double[] closingPrices, double rsi, double[] macd, double[] stochasticOscillator, double[] bollingerBands) {
-        double latestClosePrice = closingPrices[closingPrices.length - 1];
-
-        if (currentTrendDirection.equals("Long Position")) {
-            return macd[0] < macd[1] && rsi < 70 && stochasticOscillator[stochasticOscillator.length - 1] < 80 && latestClosePrice < bollingerBands[1];
-        } else if (currentTrendDirection.equals("Short Position")) {
-            return macd[0] > macd[1] && rsi > 30 && stochasticOscillator[stochasticOscillator.length - 1] > 20 && latestClosePrice > bollingerBands[2];
-        }
-
-        return false;
-    }
-
-
     // Function to send a message to a Telegram bot
-    private static void sendTelegramMessage(String action, String symbol, double currentPrice, double supportLevel, double resistanceLevel) {
-        String message = "";
-
-        switch (action) {
-            case "Long Position":
-                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
-                break;
-            case "Short Position":
-                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
-                break;
-            case "Close Position":
-                message = "🔵 <b>Kapama Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
-                break;
-            default:
-                message = action + ": " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
-        }
-
+    private static void sendTelegramMessage(String message) {
         try {
             String botToken = "6482508265:AAEDUmyCM-ygU7BVO-txyykS7cKn5URspmY";  // Replace with your actual bot token
             long chatId = 1692398446;           // Replace with your actual chat ID
 
-            String urlString = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatId + "&text=" + message + "&parse_mode=HTML";
+            String urlString = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatId + "&text=" + message;
             URL url = new URL(urlString);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
@@ -622,7 +580,7 @@ public class SignalApplication {
             int responseCode = con.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 // Message sent successfully
-                System.out.println("Telegram message sent: " + message);
+                System.out.println("Telegram message sent: " + message + " trendDirection : ");
             } else {
                 // Handle error
                 System.err.println("Error sending Telegram message. Response code: " + responseCode);
