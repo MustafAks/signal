@@ -537,12 +537,9 @@ public class SignalApplication {
         // Update the trend direction
         trendDirection = newTrendDirection;
         // Check if the trend direction has changed
-        if (!newTrendDirection.equals(previousTrendDirection)) {
+        if (!newTrendDirection.equals(previousTrendDirection) && !newTrendDirection.equals("Trend Belirsiz")) {
             // Send a message to Telegram
-            sendTelegramMessage("Trend direction for " +
-                    symbol + " " + "Current price : " +
-                    currentPrice + " " +" has changed to: " + newTrendDirection);
-
+            sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
             // Update the previous trend direction
             previousTrendDirection = newTrendDirection;
         }
@@ -567,12 +564,25 @@ public class SignalApplication {
     }
 
     // Function to send a message to a Telegram bot
-    private static void sendTelegramMessage(String message) {
+    private static void sendTelegramMessage(String action, String symbol, double currentPrice, double supportLevel, double resistanceLevel) {
+        String message = "";
+
+        switch (action) {
+            case "Long Position":
+                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+                break;
+            case "Short Position":
+                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+                break;
+            default:
+                message = action + ": " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+        }
+
         try {
             String botToken = "6482508265:AAEDUmyCM-ygU7BVO-txyykS7cKn5URspmY";  // Replace with your actual bot token
             long chatId = 1692398446;           // Replace with your actual chat ID
 
-            String urlString = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatId + "&text=" + message;
+            String urlString = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatId + "&text=" + message + "&parse_mode=HTML";
             URL url = new URL(urlString);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
@@ -580,7 +590,7 @@ public class SignalApplication {
             int responseCode = con.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 // Message sent successfully
-                System.out.println("Telegram message sent: " + message + " trendDirection : ");
+                System.out.println("Telegram message sent: " + message);
             } else {
                 // Handle error
                 System.err.println("Error sending Telegram message. Response code: " + responseCode);
