@@ -100,7 +100,7 @@ public class SignalApplication {
                     connection.disconnect();
                 }
 
-                Thread.sleep(300000); // 4 dakika bekle
+                Thread.sleep(300000); // 5 dakika bekle
 
 
             } catch (Exception e) {
