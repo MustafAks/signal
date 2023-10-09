@@ -31,7 +31,6 @@ WLDUSDT, https://api.binance.com/api/v3/klines?symbol=WLDUSDT&interval=4h
 SEIUSDT, https://api.binance.com/api/v3/klines?symbol=SEIUSDT&interval=4h
 1INCHUSDT, https://api.binance.com/api/v3/klines?symbol=1INCHUSDT&interval=4h
 AAVEUSDT, https://api.binance.com/api/v3/klines?symbol=AAVEUSDT&interval=4h
-ACAUSDT, https://api.binance.com/api/v3/klines?symbol=ACAUSDT&interval=4h
 ACHUSDT, https://api.binance.com/api/v3/klines?symbol=ACHUSDT&interval=4h
 ACMUSDT, https://api.binance.com/api/v3/klines?symbol=ACMUSDT&interval=4h
 ADAUSDT, https://api.binance.com/api/v3/klines?symbol=ADAUSDT&interval=4h
@@ -118,4 +117,5 @@ GMTUSDT, https://api.binance.com/api/v3/klines?symbol=GMTUSDT&interval=4h
 UNIUSDT, https://api.binance.com/api/v3/klines?symbol=UNIUSDT&interval=4h
 PEOPLEUSDT, https://api.binance.com/api/v3/klines?symbol=PEOPLEUSDT&interval=4h
 LUNAUSDT, https://api.binance.com/api/v3/klines?symbol=LUNAUSDT&interval=4h
+AUDIOUSDT, https://api.binance.com/api/v3/klines?symbol=AUDIOUSDT&interval=4h
 
