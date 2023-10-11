@@ -21,8 +21,11 @@ import java.util.stream.Stream;
 @SpringBootApplication
 public class SignalApplication {
 
-    private static final int PERIOD = 14; // RSI hesaplama periyodu
     private static final Map<String, String> SYMBOLS_AND_API_URLS = new HashMap<>();
+
+    private static final int PERIOD = 20; // RSI ve ADX hesaplama periyodu
+    private static final int BOLLINGER_PERIOD = 21; // Bollinger Bantları periyodu
+    private static final int FIBONACCI_PERIOD = 50; // Fibonacci geri çekilme seviyeleri için periyodu
 
     private static String previousTrendDirection = "";
 
@@ -109,27 +112,37 @@ public class SignalApplication {
         }
     }
 
-    private static double calculateRSI(double[] closingPrices) {
-        double gainSum = 0;
-        double lossSum = 0;
+    private static double calculateRSI_EMA(double[] closingPrices) {
+        double alpha = 1.0 / PERIOD;
+        double gain = 0;
+        double loss = 0;
 
-        for (int i = 1; i < PERIOD; i++) {
-            double priceChange = closingPrices[i] - closingPrices[i - 1];
-            if (priceChange > 0) {
-                gainSum += priceChange;
+        for (int i = 1; i <= PERIOD; i++) {
+            double change = closingPrices[i] - closingPrices[i - 1];
+            if (change >= 0) {
+                gain += change;
             } else {
-                lossSum += Math.abs(priceChange);
+                loss -= change;
+            }
+        }
+        double avgGain = gain / PERIOD;
+        double avgLoss = loss / PERIOD;
+
+        for (int i = PERIOD + 1; i < closingPrices.length; i++) {
+            double change = closingPrices[i] - closingPrices[i - 1];
+            if (change >= 0) {
+                avgGain = (avgGain * (PERIOD - 1) + change) * alpha;
+                avgLoss = avgLoss * (1 - alpha);
+            } else {
+                avgLoss = (avgLoss * (PERIOD - 1) - change) * alpha;
+                avgGain = avgGain * (1 - alpha);
             }
         }
 
-        double avgGain = gainSum / PERIOD;
-        double avgLoss = lossSum / PERIOD;
-
-        double relativeStrength = avgGain / avgLoss;
-        double rsi = 100 - (100 / (1 + relativeStrength));
-
-        return rsi;
+        double rs = avgGain / avgLoss;
+        return 100 - (100 / (1 + rs));
     }
+
 
     private static double calculateSMA(double[] closingPrices) {
         double sum = 0;
@@ -157,40 +170,52 @@ public class SignalApplication {
         return ema;
     }
 
-    private static double[] calculateMACD(double[] closingPrices) {
-        double[] macd = new double[2]; // 0: MACD, 1: MACD Sinyali
-        int shortTermPeriod = 12; // Kısa vadeli EMA periyodu
-        int longTermPeriod = 26; // Uzun vadeli EMA periyodu
-        int signalPeriod = 9; // MACD sinyal periyodu
+    private static double[][] calculateMACD(double[] closingPrices) {
+        int shortTermPeriod = 9; // Kısa süreli EMA periyodu
+        int longTermPeriod = 21; // Uzun süreli EMA periyodu
+        int signalPeriod = 9;
 
         if (closingPrices.length < longTermPeriod + signalPeriod) {
-            // Yeterli veri yoksa, MACD ve sinyal hesaplamasını yapmayı beklemeyi tercih edebilirsiniz.
-            return macd;
+            // Yeterli veri yoksa dizi döndürülmez.
+            return new double[][]{{0, 0}, {0, 0}};
         }
 
-        // EMA hesaplamaları
-        double shortTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, closingPrices.length - shortTermPeriod, closingPrices.length));
-        double longTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, closingPrices.length - longTermPeriod, closingPrices.length));
+        double[] macdValues = new double[closingPrices.length];
+        double[] signalValues = new double[closingPrices.length];
 
-        macd[0] = shortTermEma - longTermEma;
+        // MACD değerlerini hesaplama
+        for (int i = longTermPeriod; i < closingPrices.length; i++) {
+            double shortTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, i - shortTermPeriod + 1, i + 1));
+            double longTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, i - longTermPeriod + 1, i + 1));
+            macdValues[i] = shortTermEma - longTermEma;
+        }
 
-        // MACD sinyali hesapla
-        double[] macdForSignal = Arrays.copyOfRange(macd, 0, signalPeriod);
-        double signalEma = calculateEMA(macdForSignal);
-        macd[1] = signalEma;
+        // MACD'nin sinyal hattı değerlerini hesaplama
+        for (int i = longTermPeriod + signalPeriod - 1; i < macdValues.length; i++) {
+            signalValues[i] = calculateEMA(Arrays.copyOfRange(macdValues, i - signalPeriod + 1, i + 1));
+        }
 
-        return macd;
+        double[][] results = new double[2][2];
+        results[0][0] = macdValues[closingPrices.length - 1];  // En son MACD değeri
+        results[0][1] = signalValues[closingPrices.length - 1];  // En son MACD sinyal değeri
+
+        results[1][0] = macdValues[closingPrices.length - 2];  // Bir önceki MACD değeri
+        results[1][1] = signalValues[closingPrices.length - 2];  // Bir önceki MACD sinyal değeri
+
+        return results;
     }
 
-    private static double[] calculateStochasticOscillator(double[] highPrices, double[] lowPrices, double[] closingPrices) {
+
+    private static double[][] calculateStochasticOscillator(double[] highPrices, double[] lowPrices, double[] closingPrices) {
         int period = 14; // Stokastik Osilatör hesaplama periyodu
+        int slowPeriod = 3; // Yavaş stokastik osilatör hesaplama periyodu
 
         if (highPrices.length < period) {
-            // Yeterli veri yoksa, Stokastik Osilatör hesaplamasını yapmayı beklemeyi tercih edebilirsiniz.
-            return new double[]{};
+            return new double[][]{}; // Yeterli veri yoksa, Stokastik Osilatör hesaplamasını yapmayı beklemeyi tercih edebilirsiniz.
         }
 
         double[] stochasticOscillator = new double[closingPrices.length - period + 1];
+        double[] slowStochasticOscillator = new double[closingPrices.length - period - slowPeriod + 2];
 
         for (int i = period - 1; i < closingPrices.length; i++) {
             double[] highPricesSubset = Arrays.copyOfRange(highPrices, i - period + 1, i + 1);
@@ -205,8 +230,17 @@ public class SignalApplication {
             stochasticOscillator[i - (period - 1)] = stochasticOscillatorValue;
         }
 
-        return stochasticOscillator;
+        for (int i = 0; i < stochasticOscillator.length - slowPeriod + 1; i++) {
+            double sum = 0;
+            for (int j = i; j < i + slowPeriod; j++) {
+                sum += stochasticOscillator[j];
+            }
+            slowStochasticOscillator[i] = sum / slowPeriod;
+        }
+
+        return new double[][]{stochasticOscillator, slowStochasticOscillator};
     }
+
 
     private static double[] calculateBollingerBands(double[] closingPrices) {
         int bollingerPeriod = 20; // Bollinger Bantları periyodu
@@ -250,16 +284,17 @@ public class SignalApplication {
     private static double[] calculateFibonacciRetracementLevels(double[] highPrices, double[] lowPrices) {
         double[] fibonacciLevels = new double[5];
 
-        if (highPrices.length < 50 || lowPrices.length < 50) {
+        int timeframe = FIBONACCI_PERIOD;
+        if (highPrices.length < timeframe || lowPrices.length < timeframe) {
             return fibonacciLevels;
         }
 
-        // Son 50 mumun en yüksek ve en düşük fiyatlarını al
-        double[] last50Highs = Arrays.copyOfRange(highPrices, highPrices.length - 50, highPrices.length);
-        double[] last50Lows = Arrays.copyOfRange(lowPrices, lowPrices.length - 50, lowPrices.length);
+        // Belirlenen zaman diliminin en yüksek ve en düşük fiyatlarını al
+        double[] lastHighs = Arrays.copyOfRange(highPrices, highPrices.length - timeframe, highPrices.length);
+        double[] lastLows = Arrays.copyOfRange(lowPrices, lowPrices.length - timeframe, lowPrices.length);
 
-        double recentHigh = Arrays.stream(last50Highs).max().getAsDouble();
-        double recentLow = Arrays.stream(last50Lows).min().getAsDouble();
+        double recentHigh = Arrays.stream(lastHighs).max().getAsDouble();
+        double recentLow = Arrays.stream(lastLows).min().getAsDouble();
 
         // %23.6 seviyesi
         fibonacciLevels[0] = recentHigh - ((recentHigh - recentLow) * 0.236);
@@ -280,74 +315,62 @@ public class SignalApplication {
     }
 
 
-    private static double calculateADX(double[] highPrices, double[] lowPrices, double[] closingPrices, int period) {
-        if (highPrices.length < period) {
-            // Yeterli veri yoksa, hesaplama yapmayı beklemeyi tercih edebilirsiniz.
-            return -1;
+    private static Map<String, Double> calculateADX(double[] highPrices, double[] lowPrices, double[] closingPrices, int period) {
+        int length = closingPrices.length;
+        double[] trueRange = new double[length];
+        double[] positiveDM = new double[length];
+        double[] negativeDM = new double[length];
+        double[] trN = new double[length];
+        double[] plusDMN = new double[length];
+        double[] minusDMN = new double[length];
+        double[] plusDIN = new double[length];
+        double[] minusDIN = new double[length];
+        double[] dx = new double[length];
+        double[] adx = new double[length];
+
+        for (int i = 1; i < length; i++) {
+            double tr = Math.max(highPrices[i] - lowPrices[i],
+                    Math.max(Math.abs(highPrices[i] - closingPrices[i - 1]),
+                            Math.abs(lowPrices[i] - closingPrices[i - 1])));
+            trueRange[i] = tr;
+
+            double pdm = highPrices[i] - highPrices[i - 1];
+            double ndm = lowPrices[i - 1] - lowPrices[i];
+            positiveDM[i] = pdm > ndm && pdm > 0 ? pdm : 0;
+            negativeDM[i] = ndm > pdm && ndm > 0 ? ndm : 0;
         }
 
-        double[] positiveDM = new double[highPrices.length];
-        double[] negativeDM = new double[highPrices.length];
-        double[] trueRange = new double[highPrices.length];
-        double[] averageTrueRange = new double[highPrices.length];
-        double[] positiveDI = new double[highPrices.length];
-        double[] negativeDI = new double[highPrices.length];
-        double[] DX = new double[highPrices.length];
-        double[] ADX = new double[highPrices.length];
+        trN[period - 1] = Arrays.stream(Arrays.copyOfRange(trueRange, 1, period + 1)).sum();
+        plusDMN[period - 1] = Arrays.stream(Arrays.copyOfRange(positiveDM, 1, period + 1)).sum();
+        minusDMN[period - 1] = Arrays.stream(Arrays.copyOfRange(negativeDM, 1, period + 1)).sum();
 
-        for (int i = 1; i < highPrices.length; i++) {
-            double highDiff = highPrices[i] - highPrices[i - 1];
-            double lowDiff = lowPrices[i - 1] - lowPrices[i];
-            double highTR = Math.max(highDiff, 0);
-            double lowTR = Math.max(lowDiff, 0);
+        for (int i = period; i < length; i++) {
+            trN[i] = trN[i - 1] - (trN[i - 1] / period) + trueRange[i];
+            plusDMN[i] = plusDMN[i - 1] - (plusDMN[i - 1] / period) + positiveDM[i];
+            minusDMN[i] = minusDMN[i - 1] - (minusDMN[i - 1] / period) + negativeDM[i];
 
-            trueRange[i] = Math.max(highPrices[i] - lowPrices[i], Math.max(highTR, lowTR));
+            plusDIN[i] = 100 * plusDMN[i] / trN[i];
+            minusDIN[i] = 100 * minusDMN[i] / trN[i];
 
-            if (i >= period) {
-                double sumTR = 0;
-                double sumPositiveDM = 0;
-                double sumNegativeDM = 0;
-
-                for (int j = i - period + 1; j <= i; j++) {
-                    sumTR += trueRange[j];
-                    double highDiff2 = highPrices[j] - highPrices[j - 1];
-                    double lowDiff2 = lowPrices[j - 1] - lowPrices[j];
-                    double highTR2 = Math.max(highDiff2, 0);
-                    double lowTR2 = Math.max(lowDiff2, 0);
-
-                    double positiveDMValue = (highTR2 > lowTR2) ? highTR2 : 0;
-                    double negativeDMValue = (lowTR2 > highTR2) ? lowTR2 : 0;
-
-                    sumPositiveDM += positiveDMValue;
-                    sumNegativeDM += negativeDMValue;
-                }
-
-                averageTrueRange[i] = sumTR / period;
-                positiveDM[i] = sumPositiveDM / period;
-                negativeDM[i] = sumNegativeDM / period;
-
-                double positiveDIValue = (positiveDM[i] / averageTrueRange[i]) * 100;
-                double negativeDIValue = (negativeDM[i] / averageTrueRange[i]) * 100;
-
-                positiveDI[i] = positiveDIValue;
-                negativeDI[i] = negativeDIValue;
-
-                if ((positiveDIValue + negativeDIValue) != 0) {
-                    DX[i] = Math.abs((positiveDIValue - negativeDIValue) / (positiveDIValue + negativeDIValue)) * 100;
-                }
-
-                if (i >= period + period - 1) {
-                    double sumDX = 0;
-                    for (int k = i - period + 1; k <= i; k++) {
-                        sumDX += DX[k];
-                    }
-                    ADX[i] = sumDX / period;
-                }
-            }
+            double diDiff = Math.abs(plusDIN[i] - minusDIN[i]);
+            double diSum = plusDIN[i] + minusDIN[i];
+            dx[i] = 100 * diDiff / diSum;
         }
 
-        return ADX[ADX.length - 1];
+        // Smoothed DX for ADX
+        adx[2 * period - 2] = Arrays.stream(Arrays.copyOfRange(dx, period, 2 * period)).average().orElse(0);
+        for (int i = 2 * period - 1; i < length; i++) {
+            adx[i] = ((adx[i - 1] * (period - 1)) + dx[i]) / period;
+        }
+
+        Map<String, Double> result = new HashMap<>();
+        result.put("ADX", adx[length - 1]);
+        result.put("PlusDI", plusDIN[length - 1]);
+        result.put("MinusDI", minusDIN[length - 1]);
+
+        return result;
     }
+
 
     private static double[] calculateParabolicSAR(double[] highPrices, double[] lowPrices) {
         double[] sarValues = new double[highPrices.length];
@@ -404,112 +427,174 @@ public class SignalApplication {
 
 
     private static void analyzeTrend(String symbol, String dateStr, double[] closingPrices, double[] highPrices, double[] lowPrices) {
-        // RSI hesapla
-        double rsi = calculateRSI(closingPrices);
-
-        // SMA ve EMA hesapla
+        double rsi = calculateRSI_EMA(closingPrices);
         double sma = calculateSMA(closingPrices);
         double ema = calculateEMA(closingPrices);
-
-        // MACD hesapla
-        double[] macd = calculateMACD(closingPrices);
-
-        // Stokastik Osilatör hesapla
-        double[] stochasticOscillator = calculateStochasticOscillator(highPrices, lowPrices, closingPrices);
-
-        // Bollinger Bantlarını hesapla
-        double[] bollingerBands = calculateBollingerBands(closingPrices);
-
-        // Fibonacci Retracement seviyelerini hesapla
+        double[][] macdValues = calculateMACD(closingPrices);
+        double currentMacd = macdValues[0][0];
+        double currentSignal = macdValues[0][1];
+        double[][] stochasticValues = calculateStochasticOscillator(highPrices, lowPrices, closingPrices);
+        double stochasticK = stochasticValues[0][stochasticValues[0].length - 1];
+        double stochasticD = stochasticValues[1][stochasticValues[1].length - 1];
+        Map<String, Double> adxResult = calculateADX(highPrices, lowPrices, closingPrices, PERIOD);
+        double adx = adxResult.get("ADX");
+        double positiveDI = adxResult.get("PlusDI");
+        double negativeDI = adxResult.get("MinusDI");
+        double lastParabolicSAR = calculateParabolicSAR(highPrices, lowPrices)[closingPrices.length - 1];
         double[] fibonacciLevels = calculateFibonacciRetracementLevels(highPrices, lowPrices);
+        double closestFibonacciLevel = getClosestFibonacciLevel(closingPrices[closingPrices.length - 1], fibonacciLevels);
 
-        double adx = calculateADX(highPrices, lowPrices, closingPrices, 14);
+        double[] bollingerBands = calculateBollingerBands(closingPrices);  // Tipik olarak 20 gün kullanılır.
+        double upperBand = bollingerBands[0];
+        double lowerBand = bollingerBands[1];
 
-        double[] parabolicSAR = calculateParabolicSAR(highPrices, lowPrices);
 
+        // Trend belirleme
+        String trendDirection = determineTrendDirection(rsi, ema, sma, currentMacd, currentSignal, adx, positiveDI, negativeDI, stochasticK, stochasticD, lastParabolicSAR, closingPrices, highPrices, lowPrices);
 
-        // Trend yönünü belirle
-        String trendDirection = "";
-        String newTrendDirection = "";
+        double currentPrice = closingPrices[closingPrices.length - 1];  // Son fiyatı al
 
-        // Fibonacci seviyelerini kullanarak destek ve direnç seviyelerini belirle
-        double supportLevel = fibonacciLevels[1]; // Örnek olarak %38.2 seviyesini destek seviyesi olarak kullanıyoruz
-        double resistanceLevel = fibonacciLevels[2]; // Örnek olarak %50.0 seviyesini direnç seviyesi olarak kullanıyoruz
-
-        double currentPrice = getCoinPrice(symbol);
-
-        // Trend yönü ve Fibonacci seviyelerini sonuçlara ekle
-        newTrendDirection += " Destek Seviyesi: " + supportLevel + ", Direnç Seviyesi: " + resistanceLevel;
-
-        if (rsi > 70 && sma < ema && macd[0] > macd[1] && stochasticOscillator[stochasticOscillator.length - 1] > 80 && closingPrices[closingPrices.length - 1] > bollingerBands[0] && adx > 25) {
-            // Parabolic SAR'ı kullanarak karşılaştırma yapın
-            if (parabolicSAR[parabolicSAR.length - 1] < closingPrices[closingPrices.length - 1]) {
-                newTrendDirection = "Short Position";
-            } else {
-                newTrendDirection = "Trend Belirsiz";
+        if (!"Neutral/No Clear Signal".equals(trendDirection)
+                && !"Mild Bullish Signal".equals(trendDirection)
+                && !"Mild Bearish Signal".equals(trendDirection) && !"Sideways/Range-bound Market".equals(trendDirection)) {
+            if ("Strong Bullish Signal".equals(trendDirection)
+                    || "Strong Bearish Signal".equals(trendDirection)) {
+                sendTelegramMessage(trendDirection, symbol, currentPrice,closestFibonacciLevel);
             }
-        } else if (rsi < 30 && sma > ema && macd[0] < macd[1] && stochasticOscillator[stochasticOscillator.length - 1] < 20 && closingPrices[closingPrices.length - 1] < bollingerBands[1] && adx > 25) {
-            // Parabolic SAR'ı kullanarak karşılaştırma yapın
-            if (parabolicSAR[parabolicSAR.length - 1] > closingPrices[closingPrices.length - 1]) {
-                newTrendDirection = "Long Position";
-            } else {
-                newTrendDirection = "Trend Belirsiz";
+        }
+
+      /*  if (!"Neutral/No Clear Signal".equals(trendDirection)
+                && !"Sideways/Range-bound Market".equals(trendDirection)) {
+            if ("Strong Bullish Signal".equals(trendDirection)
+                    || "Strong Bearish Signal".equals(trendDirection) || "Mild Bullish Signal".equals(trendDirection) ||
+                    "Mild Bearish Signal".equals(trendDirection)) {
+                sendTelegramMessage(trendDirection, symbol, currentPrice, closestFibonacciLevel);
             }
+        }*/
+
+
+
+
+    // Sonuçları yazdır
+        System.out.println("-------------------------");
+        System.out.println("Tarih: "+dateStr);
+        System.out.println("Symbol: "+symbol);
+        System.out.println("Güncel Fiyat: "+currentPrice);
+        System.out.println("RSI: "+rsi);
+        System.out.println("SMA: "+sma);
+        System.out.println("EMA: "+ema);
+        System.out.println("MACD: "+currentMacd);
+        System.out.println("MACD Sinyali: "+currentSignal);
+        System.out.println("Stokastik K: "+stochasticK);
+        System.out.println("Stokastik D: "+stochasticD);
+        System.out.println("ADX: "+adx);
+        System.out.println("Parabolik SAR: "+lastParabolicSAR);
+        System.out.println("En Yakın Fibonacci Seviyesi: "+closestFibonacciLevel); // Bu satırı ekledim.
+        System.out.println("Üst Bollinger Bandı: "+upperBand);
+        System.out.println("Alt Bollinger Bandı: "+lowerBand);
+        System.out.println("Trend Yönü: "+trendDirection);
+        System.out.println("-------------------------");
+}
+
+    private static double getClosestFibonacciLevel(double currentPrice, double[] fibonacciLevels) {
+        double closestLevel = fibonacciLevels[0];
+        double minDistance = Math.abs(currentPrice - fibonacciLevels[0]);
+
+        for (int i = 1; i < fibonacciLevels.length; i++) {
+            double distance = Math.abs(currentPrice - fibonacciLevels[i]);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestLevel = fibonacciLevels[i];
+            }
+        }
+
+        return closestLevel;
+    }
+
+
+    private static String determineTrendDirection(double rsi, double ema, double sma, double currentMacd, double currentSignal, double adx, double positiveDI, double negativeDI, double stochasticK, double stochasticD, double lastParabolicSAR, double[] closingPrices, double[] highPrices, double[] lowPrices) {
+
+        // RSI İndikatörü
+        boolean isOverbought = rsi > 70;
+        boolean isOversold = rsi < 30;
+
+        // MACD İndikatörü
+        boolean bullishMACD = currentMacd > currentSignal;
+        boolean bearishMACD = currentMacd < currentSignal;
+
+        // ADX İndikatörü
+        boolean strongTrend = adx > 25;
+        boolean weakTrend = adx <= 20;
+        boolean bullishTrendWithDI = positiveDI > negativeDI && strongTrend;
+        boolean bearishTrendWithDI = negativeDI > positiveDI && strongTrend;
+
+        // Stokastik Osilatör
+        boolean stochasticOversold = stochasticK < 20 && stochasticD < 20;
+        boolean stochasticOverbought = stochasticK > 80 && stochasticD > 80;
+
+        // Parabolik SAR
+        boolean bullishSAR = lastParabolicSAR < closingPrices[closingPrices.length - 1];
+        boolean bearishSAR = lastParabolicSAR > closingPrices[closingPrices.length - 1];
+
+        // MA (Moving Averages)
+        boolean priceAboveEMA = closingPrices[closingPrices.length - 1] > ema;
+        boolean priceBelowEMA = closingPrices[closingPrices.length - 1] < ema;
+
+        // SMA (Simple Moving Average)
+        boolean priceAboveSMA = closingPrices[closingPrices.length - 1] > sma;
+        boolean priceBelowSMA = closingPrices[closingPrices.length - 1] < sma;
+
+        // Kombinasyonlar
+        double[] bollingerBands = calculateBollingerBands(closingPrices);
+        double upperBollingerBand = bollingerBands[1];
+        double lowerBollingerBand = bollingerBands[2];
+
+        double[] fibonacciLevels = calculateFibonacciRetracementLevels(highPrices, lowPrices);
+        double closestFibonacciLevel = getClosestFibonacciLevel(closingPrices[closingPrices.length - 1], fibonacciLevels);
+
+        boolean isNearUpperBollingerBand = closingPrices[closingPrices.length - 1] > 0.98 * upperBollingerBand;
+        boolean isNearLowerBollingerBand = closingPrices[closingPrices.length - 1] < 1.02 * lowerBollingerBand;
+        boolean isNearFibonacciLevel = Math.abs(closingPrices[closingPrices.length - 1] - closestFibonacciLevel) < 0.02 * closestFibonacciLevel;
+
+        // Kombinasyonlar
+        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {
+            return "Strong Bullish Signal";
+        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {
+            return "Strong Bearish Signal";
+        } else if (bullishMACD && bullishSAR && bullishTrendWithDI && priceAboveEMA && priceAboveSMA) {
+            return "Mild Bullish Signal";
+        } else if (bearishMACD && bearishSAR && bearishTrendWithDI && priceBelowEMA && priceBelowSMA) {
+            return "Mild Bearish Signal";
+        } else if (weakTrend) {
+            return "Sideways/Range-bound Market";
         } else {
-            newTrendDirection = "Trend Belirsiz";
+            return "Neutral/No Clear Signal";
         }
-
-        // Yeni pozisyon açma sinyali gelirse ve önceki trend yönü farklıysa Telegram'a mesaj gönder
-        if (!newTrendDirection.equals(previousTrendDirection)) {
-            if (newTrendDirection.equals("Long Position") || newTrendDirection.equals("Short Position")) {
-                sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
-            }
-            previousTrendDirection = newTrendDirection;
-        }
-
-
-        // Update the trend direction
-        trendDirection = newTrendDirection;
-        // Check if the trend direction has changed
-        if (!newTrendDirection.equals(previousTrendDirection)) {
-            // Send a message to Telegram
-            sendTelegramMessage(newTrendDirection, symbol, currentPrice, supportLevel, resistanceLevel);
-            // Update the previous trend direction
-            previousTrendDirection = newTrendDirection;
-        }
-
-        // Sonuçları yazdır
-        System.out.println("-------------------------");
-        System.out.println("Tarih: " + dateStr);
-        System.out.println("Symbol: " + symbol);
-        System.out.println("RSI: " + rsi);
-        System.out.println("SMA: " + sma);
-        System.out.println("EMA: " + ema);
-        System.out.println("MACD: " + macd[0]);
-        System.out.println("MACD Sinyali: " + macd[1]);
-        System.out.println("Stokastik Osilatör: " + stochasticOscillator[stochasticOscillator.length - 1]);
-        System.out.println("Bollinger Bantları: Üst - " + bollingerBands[0] + ", Alt - " + bollingerBands[1] + ", Orta - " + bollingerBands[2]);
-        System.out.println("Fibonacci Retracement Seviyeleri: %23.6 - " + fibonacciLevels[0] + ", %38.2 - " + fibonacciLevels[1] + ", %50.0 - " + fibonacciLevels[2] + ", %61.8 - " + fibonacciLevels[3] + ", %100.0 - " + fibonacciLevels[4]);
-        System.out.println("ADX: " + adx);
-        System.out.println("Parabolik SAR: " + parabolicSAR[parabolicSAR.length - 1]);
-        System.out.println("Trend Yönü: " + trendDirection);
-        System.out.println("-------------------------");
     }
 
 
     // Function to send a message to a Telegram bot
-    private static void sendTelegramMessage(String action, String symbol, double currentPrice, double supportLevel, double resistanceLevel) {
+    private static void sendTelegramMessage(String trendDirection, String symbol, double currentPrice, double closestFibonacciLevel) {
         String message = "";
 
-        switch (action) {
-            case "Long Position":
-                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+        switch (trendDirection) {
+            case "Strong Bullish Signal":
+                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
                 break;
-            case "Short Position":
-                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+            case "Strong Bearish Signal":
+                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                break;
+            case "Mild Bullish Signal":
+                message = "🟡 <b>Zayıf Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                break;
+            case "Mild Bearish Signal":
+                message = "🔶 <b>Zayıf Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                break;
+            case "Sideways/Range-bound Market":
+                message = "🔵 <b>Yatay Piyasa</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
                 break;
             default:
-                message = action + ": " + symbol + " - Güncel Fiyat: " + currentPrice + " - Destek Seviyesi: " + supportLevel + " - Direnç Seviyesi: " + resistanceLevel;
+                message = "🔍 <b>Net Bir Sinyal Yok</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
         }
 
         try {
