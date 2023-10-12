@@ -445,8 +445,8 @@ public class SignalApplication {
         double closestFibonacciLevel = getClosestFibonacciLevel(closingPrices[closingPrices.length - 1], fibonacciLevels);
 
         double[] bollingerBands = calculateBollingerBands(closingPrices);  // Tipik olarak 20 gün kullanılır.
-        double upperBand = bollingerBands[0];
-        double lowerBand = bollingerBands[1];
+        double upperBand = bollingerBands[1];
+        double lowerBand = bollingerBands[2];
 
 
         // Trend belirleme
@@ -463,7 +463,7 @@ public class SignalApplication {
             }
         }
 
-      /*  if (!"Neutral/No Clear Signal".equals(trendDirection)
+ /*       if (!"Neutral/No Clear Signal".equals(trendDirection)
                 && !"Sideways/Range-bound Market".equals(trendDirection)) {
             if ("Strong Bullish Signal".equals(trendDirection)
                     || "Strong Bearish Signal".equals(trendDirection) || "Mild Bullish Signal".equals(trendDirection) ||
@@ -557,9 +557,11 @@ public class SignalApplication {
         boolean isNearFibonacciLevel = Math.abs(closingPrices[closingPrices.length - 1] - closestFibonacciLevel) < 0.02 * closestFibonacciLevel;
 
         // Kombinasyonlar
-        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {
-            return "Strong Bullish Signal";
-        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {
+        /*if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {*/
+        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA) {
+        return "Strong Bullish Signal";
+        /*} else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {*/
+        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA) {
             return "Strong Bearish Signal";
         } else if (bullishMACD && bullishSAR && bullishTrendWithDI && priceAboveEMA && priceAboveSMA) {
             return "Mild Bullish Signal";
