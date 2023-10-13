@@ -23,11 +23,8 @@ public class SignalApplication {
 
     private static final Map<String, String> SYMBOLS_AND_API_URLS = new HashMap<>();
 
-    private static final int PERIOD = 20; // RSI ve ADX hesaplama periyodu
-    private static final int BOLLINGER_PERIOD = 21; // Bollinger Bantları periyodu
+    private static final int PERIOD = 14; // RSI ve ADX hesaplama periyodu
     private static final int FIBONACCI_PERIOD = 50; // Fibonacci geri çekilme seviyeleri için periyodu
-
-    private static String previousTrendDirection = "";
 
     private static final String SYMBOLS_AND_API_URLS_FILE = "SymbolsAndApiUrl";
 
@@ -459,42 +456,32 @@ public class SignalApplication {
                 && !"Mild Bearish Signal".equals(trendDirection) && !"Sideways/Range-bound Market".equals(trendDirection)) {
             if ("Strong Bullish Signal".equals(trendDirection)
                     || "Strong Bearish Signal".equals(trendDirection)) {
-                sendTelegramMessage(trendDirection, symbol, currentPrice,closestFibonacciLevel);
+                sendTelegramMessage(trendDirection, symbol, currentPrice, closestFibonacciLevel);
             }
         }
 
- /*       if (!"Neutral/No Clear Signal".equals(trendDirection)
-                && !"Sideways/Range-bound Market".equals(trendDirection)) {
-            if ("Strong Bullish Signal".equals(trendDirection)
-                    || "Strong Bearish Signal".equals(trendDirection) || "Mild Bullish Signal".equals(trendDirection) ||
-                    "Mild Bearish Signal".equals(trendDirection)) {
-                sendTelegramMessage(trendDirection, symbol, currentPrice, closestFibonacciLevel);
-            }
-        }*/
 
 
-
-
-    // Sonuçları yazdır
+        // Sonuçları yazdır
         System.out.println("-------------------------");
-        System.out.println("Tarih: "+dateStr);
-        System.out.println("Symbol: "+symbol);
-        System.out.println("Güncel Fiyat: "+currentPrice);
-        System.out.println("RSI: "+rsi);
-        System.out.println("SMA: "+sma);
-        System.out.println("EMA: "+ema);
-        System.out.println("MACD: "+currentMacd);
-        System.out.println("MACD Sinyali: "+currentSignal);
-        System.out.println("Stokastik K: "+stochasticK);
-        System.out.println("Stokastik D: "+stochasticD);
-        System.out.println("ADX: "+adx);
-        System.out.println("Parabolik SAR: "+lastParabolicSAR);
-        System.out.println("En Yakın Fibonacci Seviyesi: "+closestFibonacciLevel); // Bu satırı ekledim.
-        System.out.println("Üst Bollinger Bandı: "+upperBand);
-        System.out.println("Alt Bollinger Bandı: "+lowerBand);
-        System.out.println("Trend Yönü: "+trendDirection);
+        System.out.println("Tarih: " + dateStr);
+        System.out.println("Symbol: " + symbol);
+        System.out.println("Güncel Fiyat: " + currentPrice);
+        System.out.println("RSI: " + rsi);
+        System.out.println("SMA: " + sma);
+        System.out.println("EMA: " + ema);
+        System.out.println("MACD: " + currentMacd);
+        System.out.println("MACD Sinyali: " + currentSignal);
+        System.out.println("Stokastik K: " + stochasticK);
+        System.out.println("Stokastik D: " + stochasticD);
+        System.out.println("ADX: " + adx);
+        System.out.println("Parabolik SAR: " + lastParabolicSAR);
+        System.out.println("En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel); // Bu satırı ekledim.
+        System.out.println("Üst Bollinger Bandı: " + upperBand);
+        System.out.println("Alt Bollinger Bandı: " + lowerBand);
+        System.out.println("Trend Yönü: " + trendDirection);
         System.out.println("-------------------------");
-}
+    }
 
     private static double getClosestFibonacciLevel(double currentPrice, double[] fibonacciLevels) {
         double closestLevel = fibonacciLevels[0];
@@ -557,11 +544,9 @@ public class SignalApplication {
         boolean isNearFibonacciLevel = Math.abs(closingPrices[closingPrices.length - 1] - closestFibonacciLevel) < 0.02 * closestFibonacciLevel;
 
         // Kombinasyonlar
-        /*if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {*/
-        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA) {
-        return "Strong Bullish Signal";
-        /*} else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {*/
-        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA) {
+        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {
+            return "Strong Bullish Signal";
+        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {
             return "Strong Bearish Signal";
         } else if (bullishMACD && bullishSAR && bullishTrendWithDI && priceAboveEMA && priceAboveSMA) {
             return "Mild Bullish Signal";
@@ -621,28 +606,6 @@ public class SignalApplication {
         }
     }
 
-    private static double getCoinPrice(String symbol) {
-        try {
-            String apiUrl = "https://api.binance.com/api/v3/ticker/price?symbol=" + symbol;
-            URL url = new URL(apiUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            StringBuilder response = new StringBuilder();
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-
-            JSONObject jsonResponse = new JSONObject(response.toString());
-            return Double.parseDouble(jsonResponse.getString("price"));
-        } catch (Exception e) {
-            e.printStackTrace();
-            return -1; // Hata durumunda -1 dönebilirsiniz.
-        }
-    }
 
 }
