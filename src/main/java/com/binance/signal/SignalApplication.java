@@ -28,6 +28,9 @@ public class SignalApplication {
 
     private static final String SYMBOLS_AND_API_URLS_FILE = "SymbolsAndApiUrl";
 
+    private static String previousTrendDirection = "Neutral/No Clear Signal";
+
+
     static {
         loadSymbolsAndApiUrlsFromFile();
     }
@@ -424,6 +427,7 @@ public class SignalApplication {
 
 
     private static void analyzeTrend(String symbol, String dateStr, double[] closingPrices, double[] highPrices, double[] lowPrices) {
+
         double rsi = calculateRSI_EMA(closingPrices);
         double sma = calculateSMA(closingPrices);
         double ema = calculateEMA(closingPrices);
@@ -446,6 +450,8 @@ public class SignalApplication {
         double lowerBand = bollingerBands[2];
 
 
+
+
         // Trend belirleme
         String trendDirection = determineTrendDirection(rsi, ema, sma, currentMacd, currentSignal, adx, positiveDI, negativeDI, stochasticK, stochasticD, lastParabolicSAR, closingPrices, highPrices, lowPrices);
 
@@ -456,7 +462,7 @@ public class SignalApplication {
                 && !"Mild Bearish Signal".equals(trendDirection) && !"Sideways/Range-bound Market".equals(trendDirection)) {
             if ("Strong Bullish Signal".equals(trendDirection)
                     || "Strong Bearish Signal".equals(trendDirection)) {
-                sendTelegramMessage(trendDirection, symbol, currentPrice, closestFibonacciLevel);
+                sendTelegramMessage(trendDirection, symbol, currentPrice,upperBand,lowerBand);
             }
         }
 
@@ -500,58 +506,51 @@ public class SignalApplication {
 
 
     private static String determineTrendDirection(double rsi, double ema, double sma, double currentMacd, double currentSignal, double adx, double positiveDI, double negativeDI, double stochasticK, double stochasticD, double lastParabolicSAR, double[] closingPrices, double[] highPrices, double[] lowPrices) {
-
-        // RSI İndikatörü
+        // Göstergelerin durumunu değerlendir
         boolean isOverbought = rsi > 70;
         boolean isOversold = rsi < 30;
-
-        // MACD İndikatörü
         boolean bullishMACD = currentMacd > currentSignal;
         boolean bearishMACD = currentMacd < currentSignal;
-
-        // ADX İndikatörü
         boolean strongTrend = adx > 25;
         boolean weakTrend = adx <= 20;
         boolean bullishTrendWithDI = positiveDI > negativeDI && strongTrend;
         boolean bearishTrendWithDI = negativeDI > positiveDI && strongTrend;
-
-        // Stokastik Osilatör
         boolean stochasticOversold = stochasticK < 20 && stochasticD < 20;
         boolean stochasticOverbought = stochasticK > 80 && stochasticD > 80;
-
-        // Parabolik SAR
         boolean bullishSAR = lastParabolicSAR < closingPrices[closingPrices.length - 1];
         boolean bearishSAR = lastParabolicSAR > closingPrices[closingPrices.length - 1];
-
-        // MA (Moving Averages)
         boolean priceAboveEMA = closingPrices[closingPrices.length - 1] > ema;
         boolean priceBelowEMA = closingPrices[closingPrices.length - 1] < ema;
-
-        // SMA (Simple Moving Average)
         boolean priceAboveSMA = closingPrices[closingPrices.length - 1] > sma;
         boolean priceBelowSMA = closingPrices[closingPrices.length - 1] < sma;
 
-        // Kombinasyonlar
-        double[] bollingerBands = calculateBollingerBands(closingPrices);
-        double upperBollingerBand = bollingerBands[1];
-        double lowerBollingerBand = bollingerBands[2];
+        // Koşulların esnek hale getirilmesi
+        int bullishConditions = 0;
+        int bearishConditions = 0;
+        int totalConditions = 8; // Toplam koşul sayısı
 
-        double[] fibonacciLevels = calculateFibonacciRetracementLevels(highPrices, lowPrices);
-        double closestFibonacciLevel = getClosestFibonacciLevel(closingPrices[closingPrices.length - 1], fibonacciLevels);
+        if (isOversold) bullishConditions++;
+        if (bullishMACD) bullishConditions++;
+        if (bullishTrendWithDI) bullishConditions++;
+        if (stochasticOversold) bullishConditions++;
+        if (bullishSAR) bullishConditions++;
+        if (priceAboveEMA) bullishConditions++;
+        if (priceAboveSMA) bullishConditions++;
 
-        boolean isNearUpperBollingerBand = closingPrices[closingPrices.length - 1] > 0.98 * upperBollingerBand;
-        boolean isNearLowerBollingerBand = closingPrices[closingPrices.length - 1] < 1.02 * lowerBollingerBand;
-        boolean isNearFibonacciLevel = Math.abs(closingPrices[closingPrices.length - 1] - closestFibonacciLevel) < 0.02 * closestFibonacciLevel;
 
-        // Kombinasyonlar
-        if (isOversold && bullishMACD && bullishSAR && bullishTrendWithDI && stochasticOversold && priceAboveEMA && priceAboveSMA && isNearLowerBollingerBand && isNearFibonacciLevel) {
+        if (priceBelowSMA) bearishConditions++;
+        if (isOverbought) bearishConditions++;
+        if (bearishMACD) bearishConditions++;
+        if (bearishTrendWithDI) bearishConditions++;
+        if (stochasticOverbought) bearishConditions++;
+        if (bearishSAR) bearishConditions++;
+        if (priceBelowEMA) bearishConditions++;
+
+        // Koşulların belirli bir yüzdesinin karşılanmasına dayalı trend yönü belirleme
+        if (((double) bullishConditions / totalConditions) >= 0.60) { // %50 veya daha fazla koşulun karşılanması
             return "Strong Bullish Signal";
-        } else if (isOverbought && bearishMACD && bearishSAR && bearishTrendWithDI && stochasticOverbought && priceBelowEMA && priceBelowSMA && isNearUpperBollingerBand && isNearFibonacciLevel) {
+        } else if (((double) bearishConditions / totalConditions) >= 0.60) {
             return "Strong Bearish Signal";
-        } else if (bullishMACD && bullishSAR && bullishTrendWithDI && priceAboveEMA && priceAboveSMA) {
-            return "Mild Bullish Signal";
-        } else if (bearishMACD && bearishSAR && bearishTrendWithDI && priceBelowEMA && priceBelowSMA) {
-            return "Mild Bearish Signal";
         } else if (weakTrend) {
             return "Sideways/Range-bound Market";
         } else {
@@ -560,28 +559,29 @@ public class SignalApplication {
     }
 
 
+
     // Function to send a message to a Telegram bot
-    private static void sendTelegramMessage(String trendDirection, String symbol, double currentPrice, double closestFibonacciLevel) {
+    private static void sendTelegramMessage(String trendDirection, String symbol, double currentPrice, double upperBand, double lowerBand) {
         String message = "";
 
         switch (trendDirection) {
             case "Strong Bullish Signal":
-                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
                 break;
             case "Strong Bearish Signal":
-                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
                 break;
             case "Mild Bullish Signal":
-                message = "🟡 <b>Zayıf Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🟡 <b>Zayıf Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
                 break;
             case "Mild Bearish Signal":
-                message = "🔶 <b>Zayıf Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🔶 <b>Zayıf Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
                 break;
             case "Sideways/Range-bound Market":
-                message = "🔵 <b>Yatay Piyasa</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🔵 <b>Yatay Piyasa</b>: " + symbol + " - Güncel Fiyat: " + currentPrice +   " Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
                 break;
             default:
-                message = "🔍 <b>Net Bir Sinyal Yok</b>: " + symbol + " - Güncel Fiyat: " + currentPrice + " - En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel;
+                message = "🔍 <b>Net Bir Sinyal Yok</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
         }
 
         try {
