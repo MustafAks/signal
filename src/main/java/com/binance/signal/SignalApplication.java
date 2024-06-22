@@ -187,6 +187,12 @@ public class SignalApplication {
                 rsi[i] = 100 - (100 / (1 + rs));
             }
         }
+
+        // İlk 'period' kadar değeri NaN olarak ayarlayalım
+        for (int i = 0; i < period; i++) {
+            rsi[i] = Double.NaN;
+        }
+
         return rsi;
     }
 

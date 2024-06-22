@@ -41,7 +41,6 @@ SHIBUSDT, https://api.binance.com/api/v3/klines?symbol=SHIBUSDT&interval=1d
 ETCUSDT, https://api.binance.com/api/v3/klines?symbol=ETCUSDT&interval=1d
 TLMUSDT, https://api.binance.com/api/v3/klines?symbol=TLMUSDT&interval=1d
 JASMYUSDT, https://api.binance.com/api/v3/klines?symbol=JASMYUSDT&interval=1d
-CELRUSDT, https://api.binance.com/api/v3/klines?symbol=CELRUSDT&interval=1d
 API3USDT, https://api.binance.com/api/v3/klines?symbol=API3USDT&interval=1d
 ROSEUSDT, https://api.binance.com/api/v3/klines?symbol=ROSEUSDT&interval=1d
 MINAUSDT, https://api.binance.com/api/v3/klines?symbol=MINAUSDT&interval=1d
@@ -49,13 +48,6 @@ RNDRUSDT, https://api.binance.com/api/v3/klines?symbol=RNDRUSDT&interval=1d
 IMXUSDT, https://api.binance.com/api/v3/klines?symbol=IMXUSDT&interval=1d
 MANAUSDT, https://api.binance.com/api/v3/klines?symbol=MANAUSDT&interval=1d
 SANDUSDT, https://api.binance.com/api/v3/klines?symbol=SANDUSDT&interval=1d
-LDOUSDT, https://api.binance.com/api/v3/klines?symbol=LDOUSDT&interval=1d
-FTMUSDT, https://api.binance.com/api/v3/klines?symbol=FTMUSDT&interval=1d
-MKRUSDT, https://api.binance.com/api/v3/klines?symbol=MKRUSDT&interval=1d
 OPUSDT, https://api.binance.com/api/v3/klines?symbol=OPUSDT&interval=1d
-UNIUSDT, https://api.binance.com/api/v3/klines?symbol=UNIUSDT&interval=1d
 PEOPLEUSDT, https://api.binance.com/api/v3/klines?symbol=PEOPLEUSDT&interval=1d
-LUNAUSDT, https://api.binance.com/api/v3/klines?symbol=LUNAUSDT&interval=1d
-AUDIOUSDT, https://api.binance.com/api/v3/klines?symbol=AUDIOUSDT&interval=1d
-ZKUSDT, https://api.binance.com/api/v3/klines?symbol=ZKUSDT&interval=1d
 
