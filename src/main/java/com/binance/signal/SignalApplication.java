@@ -4,9 +4,9 @@ import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
+import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.DateTickUnit;
 import org.jfree.chart.axis.DateTickUnitType;
-import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.ValueMarker;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.CandlestickRenderer;
@@ -19,7 +19,6 @@ import org.jfree.data.xy.DefaultHighLowDataset;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import org.jfree.chart.annotations.XYPointerAnnotation;
-import org.jfree.chart.annotations.XYTextAnnotation;
 import org.jfree.chart.ui.RectangleEdge;
 import org.json.JSONArray;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -132,7 +131,7 @@ public class SignalApplication {
                     connection.disconnect();
                 }
 
-                Thread.sleep(300000); // 5 dakika bekle
+                Thread.sleep(86400000); // 24 saat bekle
 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -432,6 +431,19 @@ public class SignalApplication {
         dateAxis.setAutoTickUnitSelection(true);
         plot.setDomainAxis(dateAxis);
 
+        // Fiyat eksenini dinamik olarak ayarla
+        NumberAxis priceAxis = (NumberAxis) plot.getRangeAxis();
+        priceAxis.setAutoRange(true);
+        priceAxis.setAutoRangeIncludesZero(false); // Fiyat ekseni sıfır içermeyecek şekilde ayarlandı
+
+        // Fiyat ekseninin minimum ve maksimum değerlerini belirle
+        double minPrice = Arrays.stream(lowPrices).min().orElse(0.0);
+        double maxPrice = Arrays.stream(highPrices).max().orElse(100.0);
+
+        // Minimum ve maksimum değere göre ekseni ayarla
+        priceAxis.setLowerBound(minPrice * 0.9); // Minimum değerin %90'ı olarak belirle
+        priceAxis.setUpperBound(maxPrice * 1.1); // Maksimum değerin %110'u olarak belirle
+
         // Son fiyatın bulunduğu yere açıklama ekle
         double lastPrice = closePrices[closePrices.length - 1];
         ValueMarker lastPriceMarker = new ValueMarker(lastPrice);
@@ -549,5 +561,93 @@ public class SignalApplication {
         TextTitle legendTitle = new TextTitle(legendText, new Font("Dialog", Font.PLAIN, 12));
         legendTitle.setPosition(RectangleEdge.BOTTOM);
         chart.addSubtitle(legendTitle);
+    }
+
+    private static double[] calculateATR(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
+        double[] atr = new double[closePrices.length];
+        double[] tr = new double[closePrices.length];
+
+        for (int i = 1; i < closePrices.length; i++) {
+            double highLow = highPrices[i] - lowPrices[i];
+            double highClose = Math.abs(highPrices[i] - closePrices[i - 1]);
+            double lowClose = Math.abs(lowPrices[i] - closePrices[i - 1]);
+            tr[i] = Math.max(highLow, Math.max(highClose, lowClose));
+        }
+
+        double sum = 0;
+        for (int i = 1; i <= period; i++) {
+            sum += tr[i];
+        }
+        atr[period] = sum / period;
+
+        for (int i = period + 1; i < closePrices.length; i++) {
+            atr[i] = ((atr[i - 1] * (period - 1)) + tr[i]) / period;
+        }
+
+        return atr;
+    }
+
+
+    private static double[][] calculateStochasticOscillator(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
+        double[] kValues = new double[closePrices.length];
+        double[] dValues = new double[closePrices.length];
+
+        for (int i = period - 1; i < closePrices.length; i++) {
+            double highestHigh = Double.MIN_VALUE;
+            double lowestLow = Double.MAX_VALUE;
+
+            for (int j = 0; j < period; j++) {
+                if (highPrices[i - j] > highestHigh) {
+                    highestHigh = highPrices[i - j];
+                }
+                if (lowPrices[i - j] < lowestLow) {
+                    lowestLow = lowPrices[i - j];
+                }
+            }
+
+            kValues[i] = 100 * ((closePrices[i] - lowestLow) / (highestHigh - lowestLow));
+        }
+
+        // %D çizgisini hesaplayın (genellikle 3 periyotluk basit hareketli ortalama)
+        for (int i = period - 1; i < closePrices.length; i++) {
+            if (i < period + 2) {
+                dValues[i] = Double.NaN; // Yeterli veri yoksa NaN olarak ayarlayın
+            } else {
+                double sum = 0;
+                for (int j = 0; j < 3; j++) {
+                    sum += kValues[i - j];
+                }
+                dValues[i] = sum / 3;
+            }
+        }
+
+        return new double[][]{kValues, dValues};
+    }
+
+    private static double[] calculateCCI(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
+        double[] cci = new double[closePrices.length];
+        double[] typicalPrice = new double[closePrices.length];
+
+        for (int i = 0; i < closePrices.length; i++) {
+            typicalPrice[i] = (highPrices[i] + lowPrices[i] + closePrices[i]) / 3;
+        }
+
+        for (int i = period - 1; i < closePrices.length; i++) {
+            double sumTP = 0;
+            for (int j = 0; j < period; j++) {
+                sumTP += typicalPrice[i - j];
+            }
+            double meanTP = sumTP / period;
+
+            double meanDeviation = 0;
+            for (int j = 0; j < period; j++) {
+                meanDeviation += Math.abs(typicalPrice[i - j] - meanTP);
+            }
+            meanDeviation /= period;
+
+            cci[i] = (typicalPrice[i] - meanTP) / (0.015 * meanDeviation);
+        }
+
+        return cci;
     }
 }
