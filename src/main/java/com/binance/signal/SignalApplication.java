@@ -7,6 +7,7 @@ import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.DateTickUnit;
 import org.jfree.chart.axis.DateTickUnitType;
+import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.ValueMarker;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.CandlestickRenderer;
@@ -337,18 +338,17 @@ public class SignalApplication {
         // OHLC verisetini oluştur
         OHLCDataset dataset = createDataset(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume);
 
-        // Grafik oluştur
-        JFreeChart chart = ChartFactory.createCandlestickChart(
+        // Candlestick plot
+        JFreeChart candlestickChart = ChartFactory.createCandlestickChart(
                 symbol + " Closing Prices",
                 "Time",
                 "Price",
                 dataset,
                 false
         );
-
-        XYPlot plot = chart.getXYPlot();
-        CandlestickRenderer renderer = new CandlestickRenderer();
-        plot.setRenderer(renderer);
+        XYPlot candlestickPlot = (XYPlot) candlestickChart.getPlot();
+        CandlestickRenderer candlestickRenderer = new CandlestickRenderer();
+        candlestickPlot.setRenderer(candlestickRenderer);
 
         // Hareketli ortalama serisini ekle
         XYSeries maSeries = new XYSeries("20-Day MA");
@@ -358,48 +358,11 @@ public class SignalApplication {
             }
         }
         XYSeriesCollection maDataset = new XYSeriesCollection(maSeries);
-        plot.setDataset(1, maDataset);
-        plot.mapDatasetToRangeAxis(1, 0);
+        candlestickPlot.setDataset(1, maDataset);
+        candlestickPlot.mapDatasetToRangeAxis(1, 0);
         XYLineAndShapeRenderer maRenderer = new XYLineAndShapeRenderer(true, false);
         maRenderer.setSeriesPaint(0, Color.BLUE);
-        plot.setRenderer(1, maRenderer);
-
-        // RSI serisini ekle
-        XYSeries rsiSeries = new XYSeries("RSI");
-        for (int i = 0; i < rsiValues.length; i++) {
-            if (!Double.isNaN(rsiValues[i])) {
-                rsiSeries.add(dates.get(i).getTime(), rsiValues[i]);
-            }
-        }
-        XYSeriesCollection rsiDataset = new XYSeriesCollection(rsiSeries);
-        plot.setDataset(2, rsiDataset);
-        plot.mapDatasetToRangeAxis(2, 0);
-        XYLineAndShapeRenderer rsiRenderer = new XYLineAndShapeRenderer(true, false);
-        rsiRenderer.setSeriesPaint(0, Color.ORANGE);
-        plot.setRenderer(2, rsiRenderer);
-
-        // MACD serisini ekle
-        XYSeries macdSeries = new XYSeries("MACD");
-        XYSeries signalSeries = new XYSeries("Signal");
-        XYSeries histogramSeries = new XYSeries("Histogram");
-        for (int i = 0; i < macdValues[0].length; i++) {
-            if (!Double.isNaN(macdValues[0][i]) && !Double.isNaN(macdValues[1][i]) && !Double.isNaN(macdValues[2][i])) {
-                macdSeries.add(dates.get(i).getTime(), macdValues[0][i]);
-                signalSeries.add(dates.get(i).getTime(), macdValues[1][i]);
-                histogramSeries.add(dates.get(i).getTime(), macdValues[2][i]);
-            }
-        }
-        XYSeriesCollection macdDataset = new XYSeriesCollection();
-        macdDataset.addSeries(macdSeries);
-        macdDataset.addSeries(signalSeries);
-        macdDataset.addSeries(histogramSeries);
-        plot.setDataset(3, macdDataset);
-        plot.mapDatasetToRangeAxis(3, 0);
-        XYLineAndShapeRenderer macdRenderer = new XYLineAndShapeRenderer(true, false);
-        macdRenderer.setSeriesPaint(0, Color.MAGENTA);
-        macdRenderer.setSeriesPaint(1, Color.YELLOW);
-        macdRenderer.setSeriesPaint(2, Color.CYAN);
-        plot.setRenderer(3, macdRenderer);
+        candlestickPlot.setRenderer(1, maRenderer);
 
         // Bollinger Bantları serisini ekle
         XYSeries upperBandSeries = new XYSeries("Upper Band");
@@ -416,79 +379,90 @@ public class SignalApplication {
         bollingerDataset.addSeries(upperBandSeries);
         bollingerDataset.addSeries(middleBandSeries);
         bollingerDataset.addSeries(lowerBandSeries);
-        plot.setDataset(4, bollingerDataset);
-        plot.mapDatasetToRangeAxis(4, 0);
+        candlestickPlot.setDataset(2, bollingerDataset);
+        candlestickPlot.mapDatasetToRangeAxis(2, 0);
         XYLineAndShapeRenderer bollingerRenderer = new XYLineAndShapeRenderer(true, false);
         bollingerRenderer.setSeriesPaint(0, Color.BLACK);
         bollingerRenderer.setSeriesPaint(1, Color.GRAY);
         bollingerRenderer.setSeriesPaint(2, Color.DARK_GRAY);
-        plot.setRenderer(4, bollingerRenderer);
+        candlestickPlot.setRenderer(2, bollingerRenderer);
 
-        // Tarih eksenini ayarla
-        DateAxis dateAxis = new DateAxis("Time");
-        dateAxis.setDateFormatOverride(new SimpleDateFormat("dd-MM-yyyy"));
-        dateAxis.setTickUnit(new DateTickUnit(DateTickUnitType.MONTH, 1));
-        dateAxis.setAutoTickUnitSelection(true);
-        plot.setDomainAxis(dateAxis);
+        // Geçmiş önemli olayları ekle
+        addHistoricalAnnotations(candlestickPlot, dates, macdValues, rsiValues);
 
-        // Fiyat eksenini dinamik olarak ayarla
-        NumberAxis priceAxis = (NumberAxis) plot.getRangeAxis();
-        priceAxis.setAutoRange(true);
-        priceAxis.setAutoRangeIncludesZero(false); // Fiyat ekseni sıfır içermeyecek şekilde ayarlandı
-
-        // Fiyat ekseninin minimum ve maksimum değerlerini belirle
-        double minPrice = Arrays.stream(lowPrices).min().orElse(0.0);
-        double maxPrice = Arrays.stream(highPrices).max().orElse(100.0);
-
-        // Minimum ve maksimum değere göre ekseni ayarla
-        priceAxis.setLowerBound(minPrice * 0.9); // Minimum değerin %90'ı olarak belirle
-        priceAxis.setUpperBound(maxPrice * 1.1); // Maksimum değerin %110'u olarak belirle
-
-        // Son fiyatın bulunduğu yere açıklama ekle
-        double lastPrice = closePrices[closePrices.length - 1];
-        ValueMarker lastPriceMarker = new ValueMarker(lastPrice);
-        lastPriceMarker.setPaint(Color.BLACK);
-        lastPriceMarker.setLabel("Last Price: " + String.format("%.2f", lastPrice));
-        lastPriceMarker.setLabelAnchor(RectangleAnchor.TOP_RIGHT);
-        lastPriceMarker.setLabelTextAnchor(TextAnchor.BOTTOM_RIGHT);
-        plot.addRangeMarker(lastPriceMarker);
-
-        // Trend yönünü gösteren ok ekle
-        double arrowY = lastPrice;
-        XYPointerAnnotation trendAnnotation = new XYPointerAnnotation("Trend: " + trendDirection, dates.get(dates.size() - 1).getTime(), arrowY, Math.PI / 4.0);
-        if ("Bullish".equals(trendDirection)) {
-            trendAnnotation.setPaint(Color.GREEN);
-        } else if ("Bearish".equals(trendDirection)) {
-            trendAnnotation.setPaint(Color.RED);
-        } else {
-            trendAnnotation.setPaint(Color.GRAY);
+        // RSI plot
+        XYPlot rsiPlot = new XYPlot();
+        NumberAxis rsiAxis = new NumberAxis("RSI");
+        rsiAxis.setRange(0, 100);
+        rsiPlot.setRangeAxis(rsiAxis);
+        XYSeries rsiSeries = new XYSeries("RSI");
+        for (int i = 0; i < rsiValues.length; i++) {
+            if (!Double.isNaN(rsiValues[i])) {
+                rsiSeries.add(dates.get(i).getTime(), rsiValues[i]);
+            }
         }
-        plot.addAnnotation(trendAnnotation);
+        XYSeriesCollection rsiDataset = new XYSeriesCollection(rsiSeries);
+        rsiPlot.setDataset(rsiDataset);
+        XYLineAndShapeRenderer rsiRenderer = new XYLineAndShapeRenderer(true, false);
+        rsiRenderer.setSeriesPaint(0, Color.ORANGE);
+        rsiPlot.setRenderer(rsiRenderer);
+
+        // MACD plot
+        XYPlot macdPlot = new XYPlot();
+        NumberAxis macdAxis = new NumberAxis("MACD");
+        macdPlot.setRangeAxis(macdAxis);
+        XYSeries macdSeries = new XYSeries("MACD");
+        XYSeries signalSeries = new XYSeries("Signal");
+        XYSeries histogramSeries = new XYSeries("Histogram");
+        for (int i = 0; i < macdValues[0].length; i++) {
+            if (!Double.isNaN(macdValues[0][i]) && !Double.isNaN(macdValues[1][i]) && !Double.isNaN(macdValues[2][i])) {
+                macdSeries.add(dates.get(i).getTime(), macdValues[0][i]);
+                signalSeries.add(dates.get(i).getTime(), macdValues[1][i]);
+                histogramSeries.add(dates.get(i).getTime(), macdValues[2][i]);
+            }
+        }
+        XYSeriesCollection macdDataset = new XYSeriesCollection();
+        macdDataset.addSeries(macdSeries);
+        macdDataset.addSeries(signalSeries);
+        macdDataset.addSeries(histogramSeries);
+        macdPlot.setDataset(macdDataset);
+        XYLineAndShapeRenderer macdRenderer = new XYLineAndShapeRenderer(true, false);
+        macdRenderer.setSeriesPaint(0, Color.MAGENTA);
+        macdRenderer.setSeriesPaint(1, Color.YELLOW);
+        macdRenderer.setSeriesPaint(2, Color.CYAN);
+        macdPlot.setRenderer(macdRenderer);
+
+        // Combined plot
+        CombinedDomainXYPlot combinedPlot = new CombinedDomainXYPlot(new DateAxis("Time"));
+        combinedPlot.setGap(10.0);
+        combinedPlot.add(candlestickPlot, 3); // Candlestick plot will take 60% of the space
+        combinedPlot.add(rsiPlot, 1); // RSI plot will take 20% of the space
+        combinedPlot.add(macdPlot, 1); // MACD plot will take 20% of the space
+
+        JFreeChart combinedChart = new JFreeChart(symbol + " Closing Prices", JFreeChart.DEFAULT_TITLE_FONT, combinedPlot, true);
 
         // Yazı tipini büyüt
         Font font = new Font("Dialog", Font.PLAIN, 14);
-        plot.getDomainAxis().setTickLabelFont(font);
-        plot.getRangeAxis().setTickLabelFont(font);
-
-        // Grafikteki yazı boyutlarını ayarla
-        chart.getTitle().setFont(new Font("Dialog", Font.BOLD, 18));
-        if (chart.getLegend() != null) {
-            chart.getLegend().setItemFont(new Font("Dialog", Font.PLAIN, 14));
-        }
-
-        // Geçmiş önemli olayları ekle
-        addHistoricalAnnotations(plot, dates, macdValues, rsiValues);
+        combinedPlot.getDomainAxis().setTickLabelFont(font);
+        candlestickPlot.getRangeAxis().setTickLabelFont(font);
+        rsiPlot.getRangeAxis().setTickLabelFont(font);
+        macdPlot.getRangeAxis().setTickLabelFont(font);
 
         // Gelecek tahminlerini ve notları ekle
         String futureNotes = generateFutureNotes(trendDirection, rsiValues, macdValues);
-        addFutureNotes(chart, futureNotes);
+        addFutureNotes(combinedChart, futureNotes);
 
         // Sembol tablosunu ekle
-        addSymbolLegend(chart);
+        addSymbolLegend(combinedChart);
+
+        // Trend yönünü ekle
+        TextTitle trendTitle = new TextTitle("Trend Direction: " + trendDirection, new Font("Dialog", Font.BOLD, 14));
+        trendTitle.setPosition(RectangleEdge.TOP);
+        combinedChart.addSubtitle(trendTitle);
 
         File imageFile = new File("trading_view_style_chart_" + symbol + ".png");
         try {
-            ChartUtils.saveChartAsPNG(imageFile, chart, 1024, 768);
+            ChartUtils.saveChartAsPNG(imageFile, combinedChart, 1024, 768);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -496,7 +470,8 @@ public class SignalApplication {
         return imageFile;
     }
 
-    private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
+
+        private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
         int itemCount = dates.size();
         Date[] dateArray = dates.toArray(new Date[itemCount]);
 
@@ -511,19 +486,28 @@ public class SignalApplication {
         );
     }
 
+
     private static void addHistoricalAnnotations(XYPlot plot, List<Date> dates, double[][] macdValues, double[] rsiValues) {
         for (int i = 0; i < dates.size(); i++) {
             if (i > 0 && i < dates.size() - 1) {
                 if (macdValues[0][i] > macdValues[1][i] && macdValues[0][i - 1] <= macdValues[1][i - 1]) {
-                    XYPointerAnnotation annotation = new XYPointerAnnotation("\u25B2", dates.get(i).getTime(), macdValues[0][i], Math.PI / 4.0);
-                    annotation.setPaint(Color.GREEN);
-                    annotation.setTextAnchor(TextAnchor.HALF_ASCENT_CENTER);
-                    plot.addAnnotation(annotation);
+                    // Golden Cross (Bullish Signal)
+                    ValueMarker marker = new ValueMarker(dates.get(i).getTime());
+                    marker.setPaint(Color.GREEN);
+                    marker.setStroke(new BasicStroke(1.0f));
+                    marker.setLabel("GC");
+                    marker.setLabelAnchor(RectangleAnchor.TOP_LEFT);
+                    marker.setLabelTextAnchor(TextAnchor.TOP_RIGHT);
+                    plot.addDomainMarker(marker);
                 } else if (macdValues[0][i] < macdValues[1][i] && macdValues[0][i - 1] >= macdValues[1][i - 1]) {
-                    XYPointerAnnotation annotation = new XYPointerAnnotation("\u25BC", dates.get(i).getTime(), macdValues[0][i], Math.PI / 4.0);
-                    annotation.setPaint(Color.RED);
-                    annotation.setTextAnchor(TextAnchor.HALF_ASCENT_CENTER);
-                    plot.addAnnotation(annotation);
+                    // Death Cross (Bearish Signal)
+                    ValueMarker marker = new ValueMarker(dates.get(i).getTime());
+                    marker.setPaint(Color.RED);
+                    marker.setStroke(new BasicStroke(1.0f));
+                    marker.setLabel("DC");
+                    marker.setLabelAnchor(RectangleAnchor.TOP_RIGHT);
+                    marker.setLabelTextAnchor(TextAnchor.TOP_LEFT);
+                    plot.addDomainMarker(marker);
                 }
             }
         }
@@ -563,91 +547,5 @@ public class SignalApplication {
         chart.addSubtitle(legendTitle);
     }
 
-    private static double[] calculateATR(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
-        double[] atr = new double[closePrices.length];
-        double[] tr = new double[closePrices.length];
 
-        for (int i = 1; i < closePrices.length; i++) {
-            double highLow = highPrices[i] - lowPrices[i];
-            double highClose = Math.abs(highPrices[i] - closePrices[i - 1]);
-            double lowClose = Math.abs(lowPrices[i] - closePrices[i - 1]);
-            tr[i] = Math.max(highLow, Math.max(highClose, lowClose));
-        }
-
-        double sum = 0;
-        for (int i = 1; i <= period; i++) {
-            sum += tr[i];
-        }
-        atr[period] = sum / period;
-
-        for (int i = period + 1; i < closePrices.length; i++) {
-            atr[i] = ((atr[i - 1] * (period - 1)) + tr[i]) / period;
-        }
-
-        return atr;
-    }
-
-
-    private static double[][] calculateStochasticOscillator(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
-        double[] kValues = new double[closePrices.length];
-        double[] dValues = new double[closePrices.length];
-
-        for (int i = period - 1; i < closePrices.length; i++) {
-            double highestHigh = Double.MIN_VALUE;
-            double lowestLow = Double.MAX_VALUE;
-
-            for (int j = 0; j < period; j++) {
-                if (highPrices[i - j] > highestHigh) {
-                    highestHigh = highPrices[i - j];
-                }
-                if (lowPrices[i - j] < lowestLow) {
-                    lowestLow = lowPrices[i - j];
-                }
-            }
-
-            kValues[i] = 100 * ((closePrices[i] - lowestLow) / (highestHigh - lowestLow));
-        }
-
-        // %D çizgisini hesaplayın (genellikle 3 periyotluk basit hareketli ortalama)
-        for (int i = period - 1; i < closePrices.length; i++) {
-            if (i < period + 2) {
-                dValues[i] = Double.NaN; // Yeterli veri yoksa NaN olarak ayarlayın
-            } else {
-                double sum = 0;
-                for (int j = 0; j < 3; j++) {
-                    sum += kValues[i - j];
-                }
-                dValues[i] = sum / 3;
-            }
-        }
-
-        return new double[][]{kValues, dValues};
-    }
-
-    private static double[] calculateCCI(double[] highPrices, double[] lowPrices, double[] closePrices, int period) {
-        double[] cci = new double[closePrices.length];
-        double[] typicalPrice = new double[closePrices.length];
-
-        for (int i = 0; i < closePrices.length; i++) {
-            typicalPrice[i] = (highPrices[i] + lowPrices[i] + closePrices[i]) / 3;
-        }
-
-        for (int i = period - 1; i < closePrices.length; i++) {
-            double sumTP = 0;
-            for (int j = 0; j < period; j++) {
-                sumTP += typicalPrice[i - j];
-            }
-            double meanTP = sumTP / period;
-
-            double meanDeviation = 0;
-            for (int j = 0; j < period; j++) {
-                meanDeviation += Math.abs(typicalPrice[i - j] - meanTP);
-            }
-            meanDeviation /= period;
-
-            cci[i] = (typicalPrice[i] - meanTP) / (0.015 * meanDeviation);
-        }
-
-        return cci;
-    }
 }
