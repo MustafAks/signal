@@ -350,6 +350,13 @@ public class SignalApplication {
         CandlestickRenderer candlestickRenderer = new CandlestickRenderer();
         candlestickPlot.setRenderer(candlestickRenderer);
 
+        // Fiyat ekseni ayarları
+        NumberAxis priceAxis = (NumberAxis) candlestickPlot.getRangeAxis();
+        priceAxis.setAutoRangeIncludesZero(false);
+        priceAxis.setLabelFont(new Font("Dialog", Font.BOLD, 14));
+        priceAxis.setTickLabelFont(new Font("Dialog", Font.PLAIN, 12));
+        priceAxis.setTickLabelPaint(Color.BLACK);
+
         // Hareketli ortalama serisini ekle
         XYSeries maSeries = new XYSeries("20-Day MA");
         for (int i = 0; i < movingAverages.length; i++) {
@@ -389,6 +396,14 @@ public class SignalApplication {
 
         // Geçmiş önemli olayları ekle
         addHistoricalAnnotations(candlestickPlot, dates, macdValues, rsiValues);
+
+        // Fibonacci seviyelerini ekle
+        double high = Arrays.stream(highPrices).max().orElse(Double.NaN);
+        double low = Arrays.stream(lowPrices).min().orElse(Double.NaN);
+        addFibonacciLevels(candlestickPlot, high, low, dates);
+
+        // Son fiyat anotasyonunu ekle
+        addLastPriceAnnotation(candlestickPlot, dates.get(dates.size() - 1), closePrices[closePrices.length - 1]);
 
         // RSI plot
         XYPlot rsiPlot = new XYPlot();
@@ -470,6 +485,49 @@ public class SignalApplication {
         return imageFile;
     }
 
+    private static void addLastPriceAnnotation(XYPlot plot, Date date, double lastPrice) {
+        XYPointerAnnotation annotation = new XYPointerAnnotation(
+                String.format("%.2f", lastPrice),
+                date.getTime(),
+                lastPrice,
+                Math.PI / 2.0
+        );
+        annotation.setTextAnchor(TextAnchor.BASELINE_LEFT);
+        annotation.setPaint(Color.RED);
+        annotation.setFont(new Font("Dialog", Font.BOLD, 12));
+        plot.addAnnotation(annotation);
+    }
+    private static double[] calculateFibonacciLevels(double high, double low) {
+        double range = high - low;
+        return new double[]{
+                high,
+                high - 0.236 * range,
+                high - 0.382 * range,
+                high - 0.5 * range,
+                high - 0.618 * range,
+                low + 0.236 * range,
+                low + 0.382 * range,
+                low + 0.5 * range,
+                low + 0.618 * range,
+                low
+        };
+    }
+
+    private static void addFibonacciLevels(XYPlot plot, double high, double low, List<Date> dates) {
+        double[] fibonacciLevels = calculateFibonacciLevels(high, low);
+        Color[] colors = {Color.RED, Color.MAGENTA, Color.CYAN, Color.PINK, Color.ORANGE, Color.GREEN, Color.YELLOW, Color.BLUE, Color.DARK_GRAY, Color.BLACK};
+
+        for (int i = 0; i < fibonacciLevels.length; i++) {
+            ValueMarker marker = new ValueMarker(fibonacciLevels[i]);
+            marker.setPaint(colors[i % colors.length]);
+            marker.setStroke(new BasicStroke(2.0f));
+            marker.setLabel(String.format("Fib %.2f", fibonacciLevels[i]));
+            marker.setLabelFont(new Font("Dialog", Font.BOLD, 12));
+            marker.setLabelAnchor(RectangleAnchor.TOP_LEFT);
+            marker.setLabelTextAnchor(TextAnchor.BOTTOM_RIGHT);
+            plot.addRangeMarker(marker);
+        }
+    }
 
         private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
         int itemCount = dates.size();
