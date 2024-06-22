@@ -1,35 +1,46 @@
 package com.binance.signal;
 
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartUtils;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.DateAxis;
+import org.jfree.chart.axis.DateTickUnit;
+import org.jfree.chart.axis.DateTickUnitType;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.ValueMarker;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.renderer.xy.CandlestickRenderer;
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.chart.title.TextTitle;
+import org.jfree.chart.ui.RectangleAnchor;
+import org.jfree.chart.ui.TextAnchor;
+import org.jfree.data.xy.OHLCDataset;
+import org.jfree.data.xy.DefaultHighLowDataset;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
+import org.jfree.chart.annotations.XYPointerAnnotation;
+import org.jfree.chart.annotations.XYTextAnnotation;
+import org.jfree.chart.ui.RectangleEdge;
 import org.json.JSONArray;
-import org.json.JSONObject;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.awt.*;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.List;
 import java.util.stream.Stream;
 
 @SpringBootApplication
 public class SignalApplication {
 
     private static final Map<String, String> SYMBOLS_AND_API_URLS = new HashMap<>();
-
-    private static final int PERIOD = 14; // RSI ve ADX hesaplama periyodu
-    private static final int FIBONACCI_PERIOD = 50; // Fibonacci geri çekilme seviyeleri için periyodu
-
     private static final String SYMBOLS_AND_API_URLS_FILE = "SymbolsAndApiUrl";
-
-    private static String previousTrendDirection = "Neutral/No Clear Signal";
-
 
     static {
         loadSymbolsAndApiUrlsFromFile();
@@ -37,7 +48,7 @@ public class SignalApplication {
 
     private static void loadSymbolsAndApiUrlsFromFile() {
         try {
-            Path path = Paths.get("src/main/resources/" + SignalApplication.SYMBOLS_AND_API_URLS_FILE);
+            Path path = Paths.get("src/main/resources/" + SYMBOLS_AND_API_URLS_FILE);
 
             try (Stream<String> lines = Files.lines(path)) {
                 lines.forEach(line -> {
@@ -53,8 +64,10 @@ public class SignalApplication {
         }
     }
 
-
     public static void main(String[] args) {
+        String botToken = "6482508265:AAEDUmyCM-ygU7BVO-txyykS7cKn5URspmY";  // Replace with your actual bot token
+        long chatId = 1692398446;           // Replace with your actual chat ID
+
         while (true) {
             try {
                 for (Map.Entry<String, String> entry : SYMBOLS_AND_API_URLS.entrySet()) {
@@ -77,27 +90,43 @@ public class SignalApplication {
 
                     // JSON verisini işle
                     JSONArray klines = new JSONArray(response.toString());
-                    double[] closingPrices = new double[klines.length()];
+                    double[] openPrices = new double[klines.length()];
                     double[] highPrices = new double[klines.length()];
                     double[] lowPrices = new double[klines.length()];
+                    double[] closePrices = new double[klines.length()];
+                    double[] volume = new double[klines.length()];
+                    List<Date> dates = new ArrayList<>();
 
                     for (int i = 0; i < klines.length(); i++) {
                         JSONArray kline = klines.getJSONArray(i);
-                        double closingPrice = Double.parseDouble(kline.getString(4));
-                        double highPrice = Double.parseDouble(kline.getString(2));
-                        double lowPrice = Double.parseDouble(kline.getString(3));
-
-                        closingPrices[i] = closingPrice;
-                        highPrices[i] = highPrice;
-                        lowPrices[i] = lowPrice;
+                        openPrices[i] = kline.getDouble(1);
+                        highPrices[i] = kline.getDouble(2);
+                        lowPrices[i] = kline.getDouble(3);
+                        closePrices[i] = kline.getDouble(4);
+                        volume[i] = kline.getDouble(5);
+                        long timestamp = kline.getLong(0);
+                        dates.add(new Date(timestamp));
                     }
 
-                    // Tarih bilgisini al
-                    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-                    String dateStr = dateFormat.format(new Date());
+                    // Hareketli ortalama hesapla
+                    double[] movingAverages = calculateMovingAverage(closePrices, 20); // 20 günlük hareketli ortalama
 
-                    // Trend analizi yap ve sonucu yazdır
-                    analyzeTrend(symbol, dateStr, closingPrices, highPrices, lowPrices);
+                    // RSI hesapla
+                    double[] rsiValues = calculateRSI(closePrices, 14); // 14 günlük RSI
+
+                    // MACD hesapla
+                    double[][] macdValues = calculateMACD(closePrices); // MACD ve sinyal hattı
+
+                    // Bollinger Bantları hesapla
+                    double[][] bollingerBands = calculateBollingerBands(closePrices);
+
+                    // Trend yönünü belirle
+                    String trendDirection = determineTrendDirection(closePrices, movingAverages, rsiValues);
+
+                    // Grafik oluştur ve Telegram'a gönder
+                    File chartFile = generateTradingViewStyleChart(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume, movingAverages, rsiValues, macdValues, bollingerBands, trendDirection);
+                    String caption = "Closing Prices for " + symbol + " - Trend: " + trendDirection;
+                    sendTelegramImage(botToken, chatId, chartFile, caption);
 
                     // Bağlantıyı kapat
                     connection.disconnect();
@@ -105,507 +134,414 @@ public class SignalApplication {
 
                 Thread.sleep(300000); // 5 dakika bekle
 
-
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    private static double calculateRSI_EMA(double[] closingPrices) {
-        double alpha = 1.0 / PERIOD;
+    private static double[] calculateMovingAverage(double[] prices, int period) {
+        double[] movingAverages = new double[prices.length];
+        for (int i = 0; i < prices.length; i++) {
+            if (i < period - 1) {
+                movingAverages[i] = Double.NaN; // Yeterli veri yoksa NaN (Not a Number) olarak ayarla
+            } else {
+                double sum = 0;
+                for (int j = 0; j < period; j++) {
+                    sum += prices[i - j];
+                }
+                movingAverages[i] = sum / period;
+            }
+        }
+        return movingAverages;
+    }
+
+    private static double[] calculateRSI(double[] prices, int period) {
+        double[] rsi = new double[prices.length];
         double gain = 0;
         double loss = 0;
 
-        for (int i = 1; i <= PERIOD; i++) {
-            double change = closingPrices[i] - closingPrices[i - 1];
+        for (int i = 1; i < period; i++) {
+            double change = prices[i] - prices[i - 1];
             if (change >= 0) {
                 gain += change;
             } else {
                 loss -= change;
             }
         }
-        double avgGain = gain / PERIOD;
-        double avgLoss = loss / PERIOD;
 
-        for (int i = PERIOD + 1; i < closingPrices.length; i++) {
-            double change = closingPrices[i] - closingPrices[i - 1];
+        for (int i = period; i < prices.length; i++) {
+            double change = prices[i] - prices[i - 1];
             if (change >= 0) {
-                avgGain = (avgGain * (PERIOD - 1) + change) * alpha;
-                avgLoss = avgLoss * (1 - alpha);
+                gain = ((gain * (period - 1)) + change) / period;
+                loss = (loss * (period - 1)) / period;
             } else {
-                avgLoss = (avgLoss * (PERIOD - 1) - change) * alpha;
-                avgGain = avgGain * (1 - alpha);
+                gain = (gain * (period - 1)) / period;
+                loss = ((loss * (period - 1)) - change) / period;
+            }
+
+            if (loss == 0) {
+                rsi[i] = 100;
+            } else {
+                double rs = gain / loss;
+                rsi[i] = 100 - (100 / (1 + rs));
             }
         }
-
-        double rs = avgGain / avgLoss;
-        return 100 - (100 / (1 + rs));
+        return rsi;
     }
 
+    private static double[][] calculateMACD(double[] prices) {
+        double[] ema12 = calculateEMA(prices, 12);
+        double[] ema26 = calculateEMA(prices, 26);
+        double[] macd = new double[prices.length];
+        double[] signal = new double[prices.length];
+        double[] histogram = new double[prices.length];
 
-    private static double calculateSMA(double[] closingPrices) {
-        double sum = 0;
-
-        for (int i = 0; i < PERIOD; i++) {
-            sum += closingPrices[i];
+        for (int i = 0; i < prices.length; i++) {
+            macd[i] = ema12[i] - ema26[i];
         }
 
-        double sma = sum / PERIOD;
-        return sma;
+        double[] ema9 = calculateEMA(macd, 9);
+
+        for (int i = 0; i < prices.length; i++) {
+            signal[i] = ema9[i];
+            histogram[i] = macd[i] - signal[i];
+        }
+
+        return new double[][]{macd, signal, histogram};
     }
 
-    private static double calculateEMA(double[] closingPrices) {
-        double ema = 0;
-        double multiplier = 2.0 / (PERIOD + 1);
+    private static double[] calculateEMA(double[] prices, int period) {
+        double[] ema = new double[prices.length];
+        double multiplier = 2.0 / (period + 1);
 
-        for (int i = 0; i < closingPrices.length; i++) {
-            if (i == 0) {
-                ema = closingPrices[i];
-            } else {
-                ema = (closingPrices[i] - ema) * multiplier + ema;
-            }
+        ema[0] = prices[0];
+        for (int i = 1; i < prices.length; i++) {
+            ema[i] = ((prices[i] - ema[i - 1]) * multiplier) + ema[i - 1];
         }
 
         return ema;
     }
 
-    private static double[][] calculateMACD(double[] closingPrices) {
-        int shortTermPeriod = 9; // Kısa süreli EMA periyodu
-        int longTermPeriod = 21; // Uzun süreli EMA periyodu
-        int signalPeriod = 9;
+    private static double[][] calculateBollingerBands(double[] prices) {
+        int period = 20;
+        double[] sma = calculateSMA(prices, period);
+        double[] upperBand = new double[prices.length];
+        double[] lowerBand = new double[prices.length];
+        double[] middleBand = sma;
 
-        if (closingPrices.length < longTermPeriod + signalPeriod) {
-            // Yeterli veri yoksa dizi döndürülmez.
-            return new double[][]{{0, 0}, {0, 0}};
-        }
-
-        double[] macdValues = new double[closingPrices.length];
-        double[] signalValues = new double[closingPrices.length];
-
-        // MACD değerlerini hesaplama
-        for (int i = longTermPeriod; i < closingPrices.length; i++) {
-            double shortTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, i - shortTermPeriod + 1, i + 1));
-            double longTermEma = calculateEMA(Arrays.copyOfRange(closingPrices, i - longTermPeriod + 1, i + 1));
-            macdValues[i] = shortTermEma - longTermEma;
-        }
-
-        // MACD'nin sinyal hattı değerlerini hesaplama
-        for (int i = longTermPeriod + signalPeriod - 1; i < macdValues.length; i++) {
-            signalValues[i] = calculateEMA(Arrays.copyOfRange(macdValues, i - signalPeriod + 1, i + 1));
-        }
-
-        double[][] results = new double[2][2];
-        results[0][0] = macdValues[closingPrices.length - 1];  // En son MACD değeri
-        results[0][1] = signalValues[closingPrices.length - 1];  // En son MACD sinyal değeri
-
-        results[1][0] = macdValues[closingPrices.length - 2];  // Bir önceki MACD değeri
-        results[1][1] = signalValues[closingPrices.length - 2];  // Bir önceki MACD sinyal değeri
-
-        return results;
-    }
-
-
-    private static double[][] calculateStochasticOscillator(double[] highPrices, double[] lowPrices, double[] closingPrices) {
-        int period = 14; // Stokastik Osilatör hesaplama periyodu
-        int slowPeriod = 3; // Yavaş stokastik osilatör hesaplama periyodu
-
-        if (highPrices.length < period) {
-            return new double[][]{}; // Yeterli veri yoksa, Stokastik Osilatör hesaplamasını yapmayı beklemeyi tercih edebilirsiniz.
-        }
-
-        double[] stochasticOscillator = new double[closingPrices.length - period + 1];
-        double[] slowStochasticOscillator = new double[closingPrices.length - period - slowPeriod + 2];
-
-        for (int i = period - 1; i < closingPrices.length; i++) {
-            double[] highPricesSubset = Arrays.copyOfRange(highPrices, i - period + 1, i + 1);
-            double[] lowPricesSubset = Arrays.copyOfRange(lowPrices, i - period + 1, i + 1);
-
-            double highestHigh = Arrays.stream(highPricesSubset).max().orElse(0);
-            double lowestLow = Arrays.stream(lowPricesSubset).min().orElse(0);
-
-            double currentClose = closingPrices[i];
-
-            double stochasticOscillatorValue = ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100;
-            stochasticOscillator[i - (period - 1)] = stochasticOscillatorValue;
-        }
-
-        for (int i = 0; i < stochasticOscillator.length - slowPeriod + 1; i++) {
+        for (int i = period - 1; i < prices.length; i++) {
             double sum = 0;
-            for (int j = i; j < i + slowPeriod; j++) {
-                sum += stochasticOscillator[j];
+            for (int j = 0; j < period; j++) {
+                sum += Math.pow(prices[i - j] - sma[i], 2);
             }
-            slowStochasticOscillator[i] = sum / slowPeriod;
+            double stddev = Math.sqrt(sum / period);
+            upperBand[i] = sma[i] + (2 * stddev);
+            lowerBand[i] = sma[i] - (2 * stddev);
         }
 
-        return new double[][]{stochasticOscillator, slowStochasticOscillator};
+        return new double[][]{upperBand, middleBand, lowerBand};
     }
 
-
-    private static double[] calculateBollingerBands(double[] closingPrices) {
-        int bollingerPeriod = 20; // Bollinger Bantları periyodu
-        double bollingerMultiplier = 2.0; // Bollinger Bantları çarpanı
-
-        if (closingPrices.length < bollingerPeriod) {
-            // Yeterli veri yoksa, Bollinger Bantları hesaplamasını yapmayı beklemeyi tercih edebilirsiniz.
-            return new double[]{0, 0, 0}; // Orta Bollinger Bandı, Üst Bollinger Bandı, Alt Bollinger Bandı
-        }
-
-        double[] middleBand = new double[closingPrices.length - bollingerPeriod + 1];
-        double[] upperBand = new double[closingPrices.length - bollingerPeriod + 1];
-        double[] lowerBand = new double[closingPrices.length - bollingerPeriod + 1];
-
-        for (int i = bollingerPeriod - 1, j = 0; i < closingPrices.length; i++, j++) {
-            double[] subset = Arrays.copyOfRange(closingPrices, i - bollingerPeriod + 1, i + 1);
-            double sma = calculateSMA(subset);
-            double stdDev = calculateStandardDeviation(subset);
-
-            middleBand[j] = sma;
-            upperBand[j] = sma + (bollingerMultiplier * stdDev);
-            lowerBand[j] = sma - (bollingerMultiplier * stdDev);
-        }
-
-        return new double[]{middleBand[middleBand.length - 1], upperBand[upperBand.length - 1], lowerBand[lowerBand.length - 1]};
-    }
-
-    private static double calculateStandardDeviation(double[] values) {
-        double mean = calculateSMA(values);
-        double sumSquaredDifferences = 0;
-
-        for (double value : values) {
-            sumSquaredDifferences += Math.pow(value - mean, 2);
-        }
-
-        double variance = sumSquaredDifferences / values.length;
-        return Math.sqrt(variance);
-    }
-
-
-    private static double[] calculateFibonacciRetracementLevels(double[] highPrices, double[] lowPrices) {
-        double[] fibonacciLevels = new double[5];
-
-        int timeframe = FIBONACCI_PERIOD;
-        if (highPrices.length < timeframe || lowPrices.length < timeframe) {
-            return fibonacciLevels;
-        }
-
-        // Belirlenen zaman diliminin en yüksek ve en düşük fiyatlarını al
-        double[] lastHighs = Arrays.copyOfRange(highPrices, highPrices.length - timeframe, highPrices.length);
-        double[] lastLows = Arrays.copyOfRange(lowPrices, lowPrices.length - timeframe, lowPrices.length);
-
-        double recentHigh = Arrays.stream(lastHighs).max().getAsDouble();
-        double recentLow = Arrays.stream(lastLows).min().getAsDouble();
-
-        // %23.6 seviyesi
-        fibonacciLevels[0] = recentHigh - ((recentHigh - recentLow) * 0.236);
-
-        // %38.2 seviyesi
-        fibonacciLevels[1] = recentHigh - ((recentHigh - recentLow) * 0.382);
-
-        // %50.0 seviyesi
-        fibonacciLevels[2] = recentHigh - ((recentHigh - recentLow) * 0.5);
-
-        // %61.8 seviyesi
-        fibonacciLevels[3] = recentHigh - ((recentHigh - recentLow) * 0.618);
-
-        // %100.0 seviyesi
-        fibonacciLevels[4] = recentLow;
-
-        return fibonacciLevels;
-    }
-
-
-    private static Map<String, Double> calculateADX(double[] highPrices, double[] lowPrices, double[] closingPrices, int period) {
-        int length = closingPrices.length;
-        double[] trueRange = new double[length];
-        double[] positiveDM = new double[length];
-        double[] negativeDM = new double[length];
-        double[] trN = new double[length];
-        double[] plusDMN = new double[length];
-        double[] minusDMN = new double[length];
-        double[] plusDIN = new double[length];
-        double[] minusDIN = new double[length];
-        double[] dx = new double[length];
-        double[] adx = new double[length];
-
-        for (int i = 1; i < length; i++) {
-            double tr = Math.max(highPrices[i] - lowPrices[i],
-                    Math.max(Math.abs(highPrices[i] - closingPrices[i - 1]),
-                            Math.abs(lowPrices[i] - closingPrices[i - 1])));
-            trueRange[i] = tr;
-
-            double pdm = highPrices[i] - highPrices[i - 1];
-            double ndm = lowPrices[i - 1] - lowPrices[i];
-            positiveDM[i] = pdm > ndm && pdm > 0 ? pdm : 0;
-            negativeDM[i] = ndm > pdm && ndm > 0 ? ndm : 0;
-        }
-
-        trN[period - 1] = Arrays.stream(Arrays.copyOfRange(trueRange, 1, period + 1)).sum();
-        plusDMN[period - 1] = Arrays.stream(Arrays.copyOfRange(positiveDM, 1, period + 1)).sum();
-        minusDMN[period - 1] = Arrays.stream(Arrays.copyOfRange(negativeDM, 1, period + 1)).sum();
-
-        for (int i = period; i < length; i++) {
-            trN[i] = trN[i - 1] - (trN[i - 1] / period) + trueRange[i];
-            plusDMN[i] = plusDMN[i - 1] - (plusDMN[i - 1] / period) + positiveDM[i];
-            minusDMN[i] = minusDMN[i - 1] - (minusDMN[i - 1] / period) + negativeDM[i];
-
-            plusDIN[i] = 100 * plusDMN[i] / trN[i];
-            minusDIN[i] = 100 * minusDMN[i] / trN[i];
-
-            double diDiff = Math.abs(plusDIN[i] - minusDIN[i]);
-            double diSum = plusDIN[i] + minusDIN[i];
-            dx[i] = 100 * diDiff / diSum;
-        }
-
-        // Smoothed DX for ADX
-        adx[2 * period - 2] = Arrays.stream(Arrays.copyOfRange(dx, period, 2 * period)).average().orElse(0);
-        for (int i = 2 * period - 1; i < length; i++) {
-            adx[i] = ((adx[i - 1] * (period - 1)) + dx[i]) / period;
-        }
-
-        Map<String, Double> result = new HashMap<>();
-        result.put("ADX", adx[length - 1]);
-        result.put("PlusDI", plusDIN[length - 1]);
-        result.put("MinusDI", minusDIN[length - 1]);
-
-        return result;
-    }
-
-
-    private static double[] calculateParabolicSAR(double[] highPrices, double[] lowPrices) {
-        double[] sarValues = new double[highPrices.length];
-        double accelerationFactor = 0.02; // Başlangıç hızlandırma faktörü
-        double maxAccelerationFactor = 0.20; // Maksimum hızlandırma faktörü
-        double accelerationIncrement = 0.02; // Hızlandırma faktörü artışı
-
-        double sar = lowPrices[0]; // İlk SAR değeri, ilk verinin en düşük fiyatıyla başlar
-        double extremePoint = highPrices[0]; // İlk ekstrem nokta, ilk verinin en yüksek fiyatıyla başlar
-        boolean trendUp = true; // SAR trendi yukarıda başlar
-
-        sarValues[0] = sar; // İlk SAR değeri
-
-        for (int i = 1; i < highPrices.length; i++) {
-            if (trendUp) {
-                if (highPrices[i] > extremePoint) {
-                    extremePoint = highPrices[i];
-                    accelerationFactor += accelerationIncrement;
-                    if (accelerationFactor > maxAccelerationFactor) {
-                        accelerationFactor = maxAccelerationFactor;
-                    }
-                }
-
-                sar += accelerationFactor * (extremePoint - sar);
-
-                if (sar > lowPrices[i]) {
-                    trendUp = false;
-                    extremePoint = lowPrices[i];
-                    accelerationFactor = 0.02; // Başlangıç hızlandırma faktörüne geri dön
-                }
+    private static double[] calculateSMA(double[] prices, int period) {
+        double[] sma = new double[prices.length];
+        for (int i = 0; i < prices.length; i++) {
+            if (i < period - 1) {
+                sma[i] = Double.NaN; // Yeterli veri yoksa NaN (Not a Number) olarak ayarla
             } else {
-                if (lowPrices[i] < extremePoint) {
-                    extremePoint = lowPrices[i];
-                    accelerationFactor += accelerationIncrement;
-                    if (accelerationFactor > maxAccelerationFactor) {
-                        accelerationFactor = maxAccelerationFactor;
-                    }
+                double sum = 0;
+                for (int j = 0; j < period; j++) {
+                    sum += prices[i - j];
                 }
-
-                sar += accelerationFactor * (extremePoint - sar);
-
-                if (sar < highPrices[i]) {
-                    trendUp = true;
-                    extremePoint = highPrices[i];
-                    accelerationFactor = 0.02; // Başlangıç hızlandırma faktörüne geri dön
-                }
-            }
-
-            sarValues[i] = sar;
-        }
-
-        return sarValues;
-    }
-
-
-    private static void analyzeTrend(String symbol, String dateStr, double[] closingPrices, double[] highPrices, double[] lowPrices) {
-
-        double rsi = calculateRSI_EMA(closingPrices);
-        double sma = calculateSMA(closingPrices);
-        double ema = calculateEMA(closingPrices);
-        double[][] macdValues = calculateMACD(closingPrices);
-        double currentMacd = macdValues[0][0];
-        double currentSignal = macdValues[0][1];
-        double[][] stochasticValues = calculateStochasticOscillator(highPrices, lowPrices, closingPrices);
-        double stochasticK = stochasticValues[0][stochasticValues[0].length - 1];
-        double stochasticD = stochasticValues[1][stochasticValues[1].length - 1];
-        Map<String, Double> adxResult = calculateADX(highPrices, lowPrices, closingPrices, PERIOD);
-        double adx = adxResult.get("ADX");
-        double positiveDI = adxResult.get("PlusDI");
-        double negativeDI = adxResult.get("MinusDI");
-        double lastParabolicSAR = calculateParabolicSAR(highPrices, lowPrices)[closingPrices.length - 1];
-        double[] fibonacciLevels = calculateFibonacciRetracementLevels(highPrices, lowPrices);
-        double closestFibonacciLevel = getClosestFibonacciLevel(closingPrices[closingPrices.length - 1], fibonacciLevels);
-
-        double[] bollingerBands = calculateBollingerBands(closingPrices);  // Tipik olarak 20 gün kullanılır.
-        double upperBand = bollingerBands[1];
-        double lowerBand = bollingerBands[2];
-
-
-
-
-        // Trend belirleme
-        String trendDirection = determineTrendDirection(rsi, ema, sma, currentMacd, currentSignal, adx, positiveDI, negativeDI, stochasticK, stochasticD, lastParabolicSAR, closingPrices, highPrices, lowPrices);
-
-        double currentPrice = closingPrices[closingPrices.length - 1];  // Son fiyatı al
-
-        if (!"Neutral/No Clear Signal".equals(trendDirection)
-                && !"Mild Bullish Signal".equals(trendDirection)
-                && !"Mild Bearish Signal".equals(trendDirection) && !"Sideways/Range-bound Market".equals(trendDirection)) {
-            if ("Strong Bullish Signal".equals(trendDirection)
-                    || "Strong Bearish Signal".equals(trendDirection)) {
-                sendTelegramMessage(trendDirection, symbol, currentPrice,upperBand,lowerBand);
+                sma[i] = sum / period;
             }
         }
-
-
-
-        // Sonuçları yazdır
-        System.out.println("-------------------------");
-        System.out.println("Tarih: " + dateStr);
-        System.out.println("Symbol: " + symbol);
-        System.out.println("Güncel Fiyat: " + currentPrice);
-        System.out.println("RSI: " + rsi);
-        System.out.println("SMA: " + sma);
-        System.out.println("EMA: " + ema);
-        System.out.println("MACD: " + currentMacd);
-        System.out.println("MACD Sinyali: " + currentSignal);
-        System.out.println("Stokastik K: " + stochasticK);
-        System.out.println("Stokastik D: " + stochasticD);
-        System.out.println("ADX: " + adx);
-        System.out.println("Parabolik SAR: " + lastParabolicSAR);
-        System.out.println("En Yakın Fibonacci Seviyesi: " + closestFibonacciLevel); // Bu satırı ekledim.
-        System.out.println("Üst Bollinger Bandı: " + upperBand);
-        System.out.println("Alt Bollinger Bandı: " + lowerBand);
-        System.out.println("Trend Yönü: " + trendDirection);
-        System.out.println("-------------------------");
+        return sma;
     }
 
-    private static double getClosestFibonacciLevel(double currentPrice, double[] fibonacciLevels) {
-        double closestLevel = fibonacciLevels[0];
-        double minDistance = Math.abs(currentPrice - fibonacciLevels[0]);
+    private static String determineTrendDirection(double[] closingPrices, double[] movingAverages, double[] rsiValues) {
+        double lastPrice = closingPrices[closingPrices.length - 1];
+        double lastMA = movingAverages[movingAverages.length - 1];
+        double secondLastMA = movingAverages[movingAverages.length - 2];
+        double lastRSI = rsiValues[rsiValues.length - 1];
 
-        for (int i = 1; i < fibonacciLevels.length; i++) {
-            double distance = Math.abs(currentPrice - fibonacciLevels[i]);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestLevel = fibonacciLevels[i];
-            }
-        }
-
-        return closestLevel;
-    }
-
-
-    private static String determineTrendDirection(double rsi, double ema, double sma, double currentMacd, double currentSignal, double adx, double positiveDI, double negativeDI, double stochasticK, double stochasticD, double lastParabolicSAR, double[] closingPrices, double[] highPrices, double[] lowPrices) {
-        // Göstergelerin durumunu değerlendir
-        boolean isOverbought = rsi > 70;
-        boolean isOversold = rsi < 30;
-        boolean bullishMACD = currentMacd > currentSignal;
-        boolean bearishMACD = currentMacd < currentSignal;
-        boolean strongTrend = adx > 25;
-        boolean weakTrend = adx <= 20;
-        boolean bullishTrendWithDI = positiveDI > negativeDI && strongTrend;
-        boolean bearishTrendWithDI = negativeDI > positiveDI && strongTrend;
-        boolean stochasticOversold = stochasticK < 20 && stochasticD < 20;
-        boolean stochasticOverbought = stochasticK > 80 && stochasticD > 80;
-        boolean bullishSAR = lastParabolicSAR < closingPrices[closingPrices.length - 1];
-        boolean bearishSAR = lastParabolicSAR > closingPrices[closingPrices.length - 1];
-        boolean priceAboveEMA = closingPrices[closingPrices.length - 1] > ema;
-        boolean priceBelowEMA = closingPrices[closingPrices.length - 1] < ema;
-        boolean priceAboveSMA = closingPrices[closingPrices.length - 1] > sma;
-        boolean priceBelowSMA = closingPrices[closingPrices.length - 1] < sma;
-
-        // Koşulların esnek hale getirilmesi
-        int bullishConditions = 0;
-        int bearishConditions = 0;
-        int totalConditions = 8; // Toplam koşul sayısı
-
-        if (isOversold) bullishConditions++;
-        if (bullishMACD) bullishConditions++;
-        if (bullishTrendWithDI) bullishConditions++;
-        if (stochasticOversold) bullishConditions++;
-        if (bullishSAR) bullishConditions++;
-        if (priceAboveEMA) bullishConditions++;
-        if (priceAboveSMA) bullishConditions++;
-
-
-        if (priceBelowSMA) bearishConditions++;
-        if (isOverbought) bearishConditions++;
-        if (bearishMACD) bearishConditions++;
-        if (bearishTrendWithDI) bearishConditions++;
-        if (stochasticOverbought) bearishConditions++;
-        if (bearishSAR) bearishConditions++;
-        if (priceBelowEMA) bearishConditions++;
-
-        // Koşulların belirli bir yüzdesinin karşılanmasına dayalı trend yönü belirleme
-        if (((double) bullishConditions / totalConditions) >= 0.60) { // %50 veya daha fazla koşulun karşılanması
-            return "Strong Bullish Signal";
-        } else if (((double) bearishConditions / totalConditions) >= 0.60) {
-            return "Strong Bearish Signal";
-        } else if (weakTrend) {
-            return "Sideways/Range-bound Market";
+        if (lastPrice > lastMA && lastMA > secondLastMA && lastRSI > 50) {
+            return "Bullish";
+        } else if (lastPrice < lastMA && lastMA < secondLastMA && lastRSI < 50) {
+            return "Bearish";
         } else {
-            return "Neutral/No Clear Signal";
+            return "Neutral";
         }
     }
 
-
-
-    // Function to send a message to a Telegram bot
-    private static void sendTelegramMessage(String trendDirection, String symbol, double currentPrice, double upperBand, double lowerBand) {
-        String message = "";
-
-        switch (trendDirection) {
-            case "Strong Bullish Signal":
-                message = "🟢 <b>Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-                break;
-            case "Strong Bearish Signal":
-                message = "🔴 <b>Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-                break;
-            case "Mild Bullish Signal":
-                message = "🟡 <b>Zayıf Alım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-                break;
-            case "Mild Bearish Signal":
-                message = "🔶 <b>Zayıf Satım Sinyali</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-                break;
-            case "Sideways/Range-bound Market":
-                message = "🔵 <b>Yatay Piyasa</b>: " + symbol + " - Güncel Fiyat: " + currentPrice +   " Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-                break;
-            default:
-                message = "🔍 <b>Net Bir Sinyal Yok</b>: " + symbol + " - Güncel Fiyat: " + currentPrice  + ", Üst Bollinger Bandı: " + upperBand + ", Alt Bollinger Bandı: " + lowerBand;
-        }
+    private static void sendTelegramImage(String botToken, long chatId, File imageFile, String caption) {
+        String urlString = "https://api.telegram.org/bot" + botToken + "/sendPhoto";
+        String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
 
         try {
-            String botToken = "6482508265:AAEDUmyCM-ygU7BVO-txyykS7cKn5URspmY";  // Replace with your actual bot token
-            long chatId = 1692398446;           // Replace with your actual chat ID
-
-            String urlString = "https://api.telegram.org/bot" + botToken + "/sendMessage?chat_id=" + chatId + "&text=" + message + "&parse_mode=HTML";
             URL url = new URL(urlString);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestMethod("GET");
+            con.setRequestMethod("POST");
+            con.setDoOutput(true);
+            con.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+            StringBuilder bodyBuilder = new StringBuilder();
+            bodyBuilder.append("--").append(boundary).append("\r\n")
+                    .append("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n")
+                    .append(chatId).append("\r\n")
+                    .append("--").append(boundary).append("\r\n")
+                    .append("Content-Disposition: form-data; name=\"caption\"\r\n\r\n")
+                    .append(caption).append("\r\n")
+                    .append("--").append(boundary).append("\r\n")
+                    .append("Content-Disposition: form-data; name=\"photo\"; filename=\"")
+                    .append(imageFile.getName()).append("\"\r\n")
+                    .append("Content-Type: image/png\r\n\r\n");
+
+            byte[] bodyStart = bodyBuilder.toString().getBytes("UTF-8");
+            byte[] bodyEnd = ("\r\n--" + boundary + "--\r\n").getBytes("UTF-8");
+
+            try (OutputStream out = con.getOutputStream();
+                 FileInputStream fileInputStream = new FileInputStream(imageFile)) {
+                out.write(bodyStart);
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = fileInputStream.read(buffer)) != -1) {
+                    out.write(buffer, 0, bytesRead);
+                }
+                out.write(bodyEnd);
+            }
 
             int responseCode = con.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
-                // Message sent successfully
-                System.out.println("Telegram message sent: " + message);
+                System.out.println("Telegram image sent successfully.");
             } else {
-                // Handle error
-                System.err.println("Error sending Telegram message. Response code: " + responseCode);
+                System.err.println("Error sending image to Telegram. Response code: " + responseCode);
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(con.getErrorStream()))) {
+                    String responseLine;
+                    while ((responseLine = reader.readLine()) != null) {
+                        System.err.println(responseLine);
+                    }
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    private static File generateTradingViewStyleChart(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume, double[] movingAverages, double[] rsiValues, double[][] macdValues, double[][] bollingerBands, String trendDirection) {
+        // OHLC verisetini oluştur
+        OHLCDataset dataset = createDataset(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume);
 
+        // Grafik oluştur
+        JFreeChart chart = ChartFactory.createCandlestickChart(
+                symbol + " Closing Prices",
+                "Time",
+                "Price",
+                dataset,
+                false
+        );
 
+        XYPlot plot = chart.getXYPlot();
+        CandlestickRenderer renderer = new CandlestickRenderer();
+        plot.setRenderer(renderer);
+
+        // Hareketli ortalama serisini ekle
+        XYSeries maSeries = new XYSeries("20-Day MA");
+        for (int i = 0; i < movingAverages.length; i++) {
+            if (!Double.isNaN(movingAverages[i])) {
+                maSeries.add(dates.get(i).getTime(), movingAverages[i]);
+            }
+        }
+        XYSeriesCollection maDataset = new XYSeriesCollection(maSeries);
+        plot.setDataset(1, maDataset);
+        plot.mapDatasetToRangeAxis(1, 0);
+        XYLineAndShapeRenderer maRenderer = new XYLineAndShapeRenderer(true, false);
+        maRenderer.setSeriesPaint(0, Color.BLUE);
+        plot.setRenderer(1, maRenderer);
+
+        // RSI serisini ekle
+        XYSeries rsiSeries = new XYSeries("RSI");
+        for (int i = 0; i < rsiValues.length; i++) {
+            if (!Double.isNaN(rsiValues[i])) {
+                rsiSeries.add(dates.get(i).getTime(), rsiValues[i]);
+            }
+        }
+        XYSeriesCollection rsiDataset = new XYSeriesCollection(rsiSeries);
+        plot.setDataset(2, rsiDataset);
+        plot.mapDatasetToRangeAxis(2, 0);
+        XYLineAndShapeRenderer rsiRenderer = new XYLineAndShapeRenderer(true, false);
+        rsiRenderer.setSeriesPaint(0, Color.ORANGE);
+        plot.setRenderer(2, rsiRenderer);
+
+        // MACD serisini ekle
+        XYSeries macdSeries = new XYSeries("MACD");
+        XYSeries signalSeries = new XYSeries("Signal");
+        XYSeries histogramSeries = new XYSeries("Histogram");
+        for (int i = 0; i < macdValues[0].length; i++) {
+            if (!Double.isNaN(macdValues[0][i]) && !Double.isNaN(macdValues[1][i]) && !Double.isNaN(macdValues[2][i])) {
+                macdSeries.add(dates.get(i).getTime(), macdValues[0][i]);
+                signalSeries.add(dates.get(i).getTime(), macdValues[1][i]);
+                histogramSeries.add(dates.get(i).getTime(), macdValues[2][i]);
+            }
+        }
+        XYSeriesCollection macdDataset = new XYSeriesCollection();
+        macdDataset.addSeries(macdSeries);
+        macdDataset.addSeries(signalSeries);
+        macdDataset.addSeries(histogramSeries);
+        plot.setDataset(3, macdDataset);
+        plot.mapDatasetToRangeAxis(3, 0);
+        XYLineAndShapeRenderer macdRenderer = new XYLineAndShapeRenderer(true, false);
+        macdRenderer.setSeriesPaint(0, Color.MAGENTA);
+        macdRenderer.setSeriesPaint(1, Color.YELLOW);
+        macdRenderer.setSeriesPaint(2, Color.CYAN);
+        plot.setRenderer(3, macdRenderer);
+
+        // Bollinger Bantları serisini ekle
+        XYSeries upperBandSeries = new XYSeries("Upper Band");
+        XYSeries middleBandSeries = new XYSeries("Middle Band");
+        XYSeries lowerBandSeries = new XYSeries("Lower Band");
+        for (int i = 0; i < bollingerBands[0].length; i++) {
+            if (!Double.isNaN(bollingerBands[0][i]) && !Double.isNaN(bollingerBands[1][i]) && !Double.isNaN(bollingerBands[2][i])) {
+                upperBandSeries.add(dates.get(i).getTime(), bollingerBands[0][i]);
+                middleBandSeries.add(dates.get(i).getTime(), bollingerBands[1][i]);
+                lowerBandSeries.add(dates.get(i).getTime(), bollingerBands[2][i]);
+            }
+        }
+        XYSeriesCollection bollingerDataset = new XYSeriesCollection();
+        bollingerDataset.addSeries(upperBandSeries);
+        bollingerDataset.addSeries(middleBandSeries);
+        bollingerDataset.addSeries(lowerBandSeries);
+        plot.setDataset(4, bollingerDataset);
+        plot.mapDatasetToRangeAxis(4, 0);
+        XYLineAndShapeRenderer bollingerRenderer = new XYLineAndShapeRenderer(true, false);
+        bollingerRenderer.setSeriesPaint(0, Color.BLACK);
+        bollingerRenderer.setSeriesPaint(1, Color.GRAY);
+        bollingerRenderer.setSeriesPaint(2, Color.DARK_GRAY);
+        plot.setRenderer(4, bollingerRenderer);
+
+        // Tarih eksenini ayarla
+        DateAxis dateAxis = new DateAxis("Time");
+        dateAxis.setDateFormatOverride(new SimpleDateFormat("dd-MM-yyyy"));
+        dateAxis.setTickUnit(new DateTickUnit(DateTickUnitType.MONTH, 1));
+        dateAxis.setAutoTickUnitSelection(true);
+        plot.setDomainAxis(dateAxis);
+
+        // Son fiyatın bulunduğu yere açıklama ekle
+        double lastPrice = closePrices[closePrices.length - 1];
+        ValueMarker lastPriceMarker = new ValueMarker(lastPrice);
+        lastPriceMarker.setPaint(Color.BLACK);
+        lastPriceMarker.setLabel("Last Price: " + String.format("%.2f", lastPrice));
+        lastPriceMarker.setLabelAnchor(RectangleAnchor.TOP_RIGHT);
+        lastPriceMarker.setLabelTextAnchor(TextAnchor.BOTTOM_RIGHT);
+        plot.addRangeMarker(lastPriceMarker);
+
+        // Trend yönünü gösteren ok ekle
+        double arrowY = lastPrice;
+        XYPointerAnnotation trendAnnotation = new XYPointerAnnotation("Trend: " + trendDirection, dates.get(dates.size() - 1).getTime(), arrowY, Math.PI / 4.0);
+        if ("Bullish".equals(trendDirection)) {
+            trendAnnotation.setPaint(Color.GREEN);
+        } else if ("Bearish".equals(trendDirection)) {
+            trendAnnotation.setPaint(Color.RED);
+        } else {
+            trendAnnotation.setPaint(Color.GRAY);
+        }
+        plot.addAnnotation(trendAnnotation);
+
+        // Yazı tipini büyüt
+        Font font = new Font("Dialog", Font.PLAIN, 14);
+        plot.getDomainAxis().setTickLabelFont(font);
+        plot.getRangeAxis().setTickLabelFont(font);
+
+        // Grafikteki yazı boyutlarını ayarla
+        chart.getTitle().setFont(new Font("Dialog", Font.BOLD, 18));
+        if (chart.getLegend() != null) {
+            chart.getLegend().setItemFont(new Font("Dialog", Font.PLAIN, 14));
+        }
+
+        // Geçmiş önemli olayları ekle
+        addHistoricalAnnotations(plot, dates, macdValues, rsiValues);
+
+        // Gelecek tahminlerini ve notları ekle
+        String futureNotes = generateFutureNotes(trendDirection, rsiValues, macdValues);
+        addFutureNotes(chart, futureNotes);
+
+        // Sembol tablosunu ekle
+        addSymbolLegend(chart);
+
+        File imageFile = new File("trading_view_style_chart_" + symbol + ".png");
+        try {
+            ChartUtils.saveChartAsPNG(imageFile, chart, 1024, 768);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return imageFile;
+    }
+
+    private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
+        int itemCount = dates.size();
+        Date[] dateArray = dates.toArray(new Date[itemCount]);
+
+        return new DefaultHighLowDataset(
+                symbol,
+                dateArray,
+                highPrices,
+                lowPrices,
+                openPrices,
+                closePrices,
+                volume
+        );
+    }
+
+    private static void addHistoricalAnnotations(XYPlot plot, List<Date> dates, double[][] macdValues, double[] rsiValues) {
+        for (int i = 0; i < dates.size(); i++) {
+            if (i > 0 && i < dates.size() - 1) {
+                if (macdValues[0][i] > macdValues[1][i] && macdValues[0][i - 1] <= macdValues[1][i - 1]) {
+                    XYPointerAnnotation annotation = new XYPointerAnnotation("\u25B2", dates.get(i).getTime(), macdValues[0][i], Math.PI / 4.0);
+                    annotation.setPaint(Color.GREEN);
+                    annotation.setTextAnchor(TextAnchor.HALF_ASCENT_CENTER);
+                    plot.addAnnotation(annotation);
+                } else if (macdValues[0][i] < macdValues[1][i] && macdValues[0][i - 1] >= macdValues[1][i - 1]) {
+                    XYPointerAnnotation annotation = new XYPointerAnnotation("\u25BC", dates.get(i).getTime(), macdValues[0][i], Math.PI / 4.0);
+                    annotation.setPaint(Color.RED);
+                    annotation.setTextAnchor(TextAnchor.HALF_ASCENT_CENTER);
+                    plot.addAnnotation(annotation);
+                }
+            }
+        }
+    }
+
+    private static String generateFutureNotes(String trendDirection, double[] rsiValues, double[][] macdValues) {
+        StringBuilder notes = new StringBuilder();
+        notes.append("Future Notes: ");
+        if ("Bullish".equals(trendDirection)) {
+            notes.append("Expect potential bullish trend continuation.");
+        } else if ("Bearish".equals(trendDirection)) {
+            notes.append("Expect potential bearish trend continuation.");
+        } else {
+            notes.append("Trend is neutral, watch for further signals.");
+        }
+
+        double lastRSI = rsiValues[rsiValues.length - 1];
+        if (lastRSI > 70) {
+            notes.append(" RSI is overbought, consider caution.");
+        } else if (lastRSI < 30) {
+            notes.append(" RSI is oversold, potential for reversal.");
+        }
+
+        return notes.toString();
+    }
+
+    private static void addFutureNotes(JFreeChart chart, String notes) {
+        TextTitle futureNotesTitle = new TextTitle(notes, new Font("Dialog", Font.PLAIN, 12));
+        futureNotesTitle.setPosition(RectangleEdge.BOTTOM);
+        chart.addSubtitle(futureNotesTitle);
+    }
+
+    private static void addSymbolLegend(JFreeChart chart) {
+        String legendText = "Legend: \u25B2 = Golden Cross, \u25BC = Death Cross";
+        TextTitle legendTitle = new TextTitle(legendText, new Font("Dialog", Font.PLAIN, 12));
+        legendTitle.setPosition(RectangleEdge.BOTTOM);
+        chart.addSubtitle(legendTitle);
+    }
 }
