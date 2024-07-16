@@ -125,7 +125,7 @@ public class SignalApplication {
 
                     // Grafik oluştur ve Telegram'a gönder
                     File chartFile = generateTradingViewStyleChart(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume, movingAverages, rsiValues, macdValues, bollingerBands, trendDirection);
-                    String caption = "Closing Prices for " + symbol + " - Trend: " + trendDirection;
+                    String caption = generateTwitterCaption(symbol, trendDirection);
                     sendTelegramImage(botToken, chatId, chartFile, caption);
 
                     // Bağlantıyı kapat
@@ -334,7 +334,6 @@ public class SignalApplication {
         }
     }
 
-
     private static File generateTradingViewStyleChart(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume, double[] movingAverages, double[] rsiValues, double[][] macdValues, double[][] bollingerBands, String trendDirection) {
         // OHLC verisetini oluştur
         OHLCDataset dataset = createDataset(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume);
@@ -494,8 +493,6 @@ public class SignalApplication {
         return imageFile;
     }
 
-
-
     private static void addLastPriceAnnotation(XYPlot plot, Date date, double lastPrice) {
         XYPointerAnnotation annotation = new XYPointerAnnotation(
                 String.format("%.2f", lastPrice),
@@ -508,6 +505,7 @@ public class SignalApplication {
         annotation.setFont(new Font("Dialog", Font.BOLD, 12));
         plot.addAnnotation(annotation);
     }
+
     private static double[] calculateFibonacciLevels(double high, double low) {
         double range = high - low;
         return new double[]{
@@ -540,7 +538,7 @@ public class SignalApplication {
         }
     }
 
-        private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
+    private static OHLCDataset createDataset(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume) {
         int itemCount = dates.size();
         Date[] dateArray = dates.toArray(new Date[itemCount]);
 
@@ -554,7 +552,6 @@ public class SignalApplication {
                 volume
         );
     }
-
 
     private static void addHistoricalAnnotations(XYPlot plot, List<Date> dates, double[][] macdValues, double[] rsiValues) {
         for (int i = 0; i < dates.size(); i++) {
@@ -616,5 +613,8 @@ public class SignalApplication {
         chart.addSubtitle(legendTitle);
     }
 
+    private static String generateTwitterCaption(String symbol, String trendDirection) {
+        return "Closing Prices for " + symbol + " - Trend: " + trendDirection + ". Follow for more updates! #Crypto #Trading #Finance";
+    }
 
 }
