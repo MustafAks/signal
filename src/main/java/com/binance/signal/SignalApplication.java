@@ -334,6 +334,7 @@ public class SignalApplication {
         }
     }
 
+
     private static File generateTradingViewStyleChart(String symbol, List<Date> dates, double[] openPrices, double[] highPrices, double[] lowPrices, double[] closePrices, double[] volume, double[] movingAverages, double[] rsiValues, double[][] macdValues, double[][] bollingerBands, String trendDirection) {
         // OHLC verisetini oluştur
         OHLCDataset dataset = createDataset(symbol, dates, openPrices, highPrices, lowPrices, closePrices, volume);
@@ -394,6 +395,14 @@ public class SignalApplication {
         bollingerRenderer.setSeriesPaint(2, Color.DARK_GRAY);
         candlestickPlot.setRenderer(2, bollingerRenderer);
 
+        // Tarih eksenini ayarla
+        DateAxis dateAxis = new DateAxis("Time");
+        dateAxis.setDateFormatOverride(new SimpleDateFormat("MMM-yyyy"));
+        dateAxis.setTickUnit(new DateTickUnit(DateTickUnitType.MONTH, 1));
+        dateAxis.setVerticalTickLabels(true); // Tarih etiketlerini dikey olarak yerleştir
+        dateAxis.setTickLabelFont(new Font("Dialog", Font.PLAIN, 10)); // Yazı tipini ayarla
+        candlestickPlot.setDomainAxis(dateAxis);
+
         // Geçmiş önemli olayları ekle
         addHistoricalAnnotations(candlestickPlot, dates, macdValues, rsiValues);
 
@@ -448,7 +457,7 @@ public class SignalApplication {
         macdPlot.setRenderer(macdRenderer);
 
         // Combined plot
-        CombinedDomainXYPlot combinedPlot = new CombinedDomainXYPlot(new DateAxis("Time"));
+        CombinedDomainXYPlot combinedPlot = new CombinedDomainXYPlot(dateAxis);
         combinedPlot.setGap(10.0);
         combinedPlot.add(candlestickPlot, 3); // Candlestick plot will take 60% of the space
         combinedPlot.add(rsiPlot, 1); // RSI plot will take 20% of the space
@@ -484,6 +493,8 @@ public class SignalApplication {
 
         return imageFile;
     }
+
+
 
     private static void addLastPriceAnnotation(XYPlot plot, Date date, double lastPrice) {
         XYPointerAnnotation annotation = new XYPointerAnnotation(
