@@ -132,7 +132,7 @@ public class SignalApplication {
                     connection.disconnect();
                 }
 
-                Thread.sleep(7200000); // 2 saat bekle
+                Thread.sleep(3600000); // 2 saat bekle
 
             } catch (Exception e) {
                 e.printStackTrace();
