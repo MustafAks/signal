@@ -160,13 +160,14 @@ public class SignalApplication {
         }
 
         // Örneğin, DB'de son 6 aylık veriyi analiz etmek için başlangıç ve bitiş zamanlarını belirleyelim.
-        Calendar cal = Calendar.getInstance();
-        Date endDate = cal.getTime();
-        cal.add(Calendar.MONTH, -6);
-        Date startDate = cal.getTime();
+
 
         while (true) {
             try {
+                Calendar cal = Calendar.getInstance();
+                Date endDate = cal.getTime();
+                cal.add(Calendar.MONTH, -6);
+                Date startDate = cal.getTime();
                 for (Map.Entry<String, String> entry : SYMBOLS_AND_API_URLS.entrySet()) {
                     String symbol = entry.getKey();
                     String apiUrl = entry.getValue();
