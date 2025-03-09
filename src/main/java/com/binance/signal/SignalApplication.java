@@ -24,7 +24,8 @@ import org.jfree.chart.ui.RectangleEdge;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
+import org.apache.commons.math3.stat.regression.SimpleRegression;
+import org.apache.commons.math3.distribution.NormalDistribution;
 import java.awt.*;
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -41,6 +42,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import java.util.Arrays;
 
 @SpringBootApplication
 public class SignalApplication {
@@ -115,7 +117,7 @@ public class SignalApplication {
     }
 
     // En son 10 simülasyon kaydını tutan liste (FIFO)
-    private static final List<TradeSimulator.SimulationRecord> simulationRecords = new ArrayList<TradeSimulator.SimulationRecord>();
+    private static final List<SimulationRecord> simulationRecords = new ArrayList<SimulationRecord>();
 
     /**
      * Main metodunda, tüm iş akışını planlı olarak çalıştırıyoruz.
@@ -219,8 +221,8 @@ public class SignalApplication {
                         // Bugün için tahmin: geçmiş günlerdeki ortalama kazanç üzerinden bugünkü kapanış fiyatı ile exit tahmini
                         String todayPrediction = TradeSimulator.predictTodayTrade(historicalRecords, finalTrend);
 
-                        // Yeni eklenen: Bugünün simülasyon kaydını oluşturup kaydedelim
-                        TradeSimulator.SimulationRecord simRec = TradeSimulator.recordTodaySimulation(historicalRecords, finalTrend);
+                        // Bugünün simülasyon kaydını oluşturup kaydedelim
+                        SimulationRecord simRec = TradeSimulator.recordTodaySimulation(historicalRecords, finalTrend);
                         if (simRec != null) {
                             simRec.symbol = symbol;
                             simulationRecords.add(simRec);
@@ -253,7 +255,7 @@ public class SignalApplication {
                 // En son 10 simülasyon kaydının özetini yazdıralım:
                 if (!simulationRecords.isEmpty()) {
                     System.out.println("----- Son 10 Simülasyon Kaydı -----");
-                    for (TradeSimulator.SimulationRecord rec : simulationRecords) {
+                    for (SimulationRecord rec : simulationRecords) {
                         System.out.println(rec);
                     }
                     System.out.println("-------------------------------------");
@@ -578,6 +580,10 @@ public class SignalApplication {
 
     /**
      * Trade simülasyonları için metotlar.
+     *
+     * Aşağıda, yalnızca geçmiş verilerin ortalamasını kullanmak yerine,
+     * (1) basit istatistiksel regresyon (SimpleRegression) ve
+     * (2) Monte Carlo simülasyonu ile tahmin yapacak ek metotlar eklenmiştir.
      */
     private static class TradeSimulator {
 
@@ -627,18 +633,88 @@ public class SignalApplication {
         }
 
         /**
+         * Basit regresyon kullanarak geçmiş günlerin optimal trade kar yüzdesi verileri üzerinden,
+         * gelecek gün için bir "profit" tahmini yapar.
+         */
+        public static double predictProfitUsingRegression(List<Double> profitPercentages) {
+            SimpleRegression regression = new SimpleRegression();
+            int n = profitPercentages.size();
+            for (int i = 0; i < n; i++) {
+                // Bağımsız değişken olarak gün indeksini, bağımlı değişken olarak profit yüzdesini kullanıyoruz.
+                regression.addData(i, profitPercentages.get(i));
+            }
+            // Gelecek günün (n'inci gün) tahmini
+            return regression.predict(n);
+        }
+
+        /**
+         * Monte Carlo simülasyonu ile geçmiş verilerin dağılımını (ortalama ve standart sapma) kullanarak,
+         * bugünkü kapanış fiyatı üzerinden çıkış fiyatı tahminlerini üretir.
+         */
+        public static String monteCarloSimulation(double currentPrice, List<Double> profitPercentages, int iterations) {
+            int n = profitPercentages.size();
+            if(n == 0) return "Yeterli veriye ulaşılamadı.";
+            double sum = 0;
+            for(double p : profitPercentages) {
+                sum += p;
+            }
+            double mean = sum / n;
+            double variance = 0;
+            for(double p : profitPercentages) {
+                variance += (p - mean) * (p - mean);
+            }
+            variance /= n;
+            double stdDev = Math.sqrt(variance);
+            NormalDistribution distribution = new NormalDistribution(mean, stdDev);
+            double[] simulatedExitPrices = new double[iterations];
+            for (int i = 0; i < iterations; i++) {
+                double randomProfit = distribution.sample();
+                // Bullish için: çıkış fiyatı = currentPrice * (1 + randomProfit/100)
+                simulatedExitPrices[i] = currentPrice * (1 + randomProfit/100);
+            }
+            Arrays.sort(simulatedExitPrices);
+            double median = simulatedExitPrices[iterations/2];
+            double lowerBound = simulatedExitPrices[(int)(iterations*0.05)];
+            double upperBound = simulatedExitPrices[(int)(iterations*0.95)];
+            return String.format("Monte Carlo Simülasyonu (n=%d): Medyan Exit Fiyatı: %.2f, %d%% - %d%% aralığı: [%.2f, %.2f]",
+                    iterations, median, 5, 95, lowerBound, upperBound);
+        }
+
+        /**
          * Bugün için tahmin oluşturur:
          * - DB’deki 6 aylık veriden, bugünkü gün hariç her gün için optimal trade kar yüzdesi hesaplanır.
          * - Bu kar yüzdelerinin ortalaması alınır.
+         * - Basit regresyon ve Monte Carlo simülasyonu eklenir.
          * - Bugünün son kapanış fiyatı üzerinden (giriş), beklenen exit fiyatı hesaplanır.
          */
         public static String predictTodayTrade(List<MarketDataRecord> records, String finalTrend) {
-            // Benzer hesaplamayı recordTodaySimulation() içinde yapıyoruz,
-            // bu metot yalnızca metinsel tahmin döndürür.
-            SimulationRecord rec = recordTodaySimulation(records, finalTrend);
-            if (rec == null) return "Bugün için tahmin yapılamadı.";
-            return String.format("Bugün Tahmini: %s | Giriş: %.2f | Çıkış: %.2f | Beklenen Kar/Zarar: %.2f%%",
-                    rec.tradeType, rec.predictedEntry, rec.predictedExit, rec.predictedProfitPct);
+            SimulationRecord simRec = recordTodaySimulation(records, finalTrend);
+            if (simRec == null) return "Bugün için tahmin yapılamadı.";
+
+            // Geçmiş günlerden (bugün hariç) optimal trade kar yüzdelerini hesaplayalım.
+            Map<String, List<MarketDataRecord>> dailyRecords = new TreeMap<>();
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+            for (MarketDataRecord record : records) {
+                String dayKey = sdf.format(record.getTimestamp());
+                dailyRecords.computeIfAbsent(dayKey, k -> new ArrayList<>()).add(record);
+            }
+            List<Double> profitPercentages = new ArrayList<>();
+            String todayKey = "";
+            if (!dailyRecords.isEmpty()) {
+                List<String> sortedDays = new ArrayList<>(dailyRecords.keySet());
+                todayKey = sortedDays.get(sortedDays.size() - 1);
+            }
+            for (Map.Entry<String, List<MarketDataRecord>> entry : dailyRecords.entrySet()) {
+                if (entry.getKey().equals(todayKey)) continue;
+                TradeResult tr = simulateOptimalTradeForDay(entry.getValue(), finalTrend);
+                if (tr != null) {
+                    profitPercentages.add(tr.profitPct);
+                }
+            }
+            double predictedProfitRegression = predictProfitUsingRegression(profitPercentages);
+            String monteCarloResult = monteCarloSimulation(simRec.predictedEntry, profitPercentages, 1000);
+            return String.format("Bugün Tahmini: %s | Giriş: %.2f | Çıkış: %.2f | Beklenen Ortalama Kar: %.2f%%\nRegression Tahmini: %.2f%%\n%s",
+                    simRec.tradeType, simRec.predictedEntry, simRec.predictedExit, simRec.predictedProfitPct, predictedProfitRegression, monteCarloResult);
         }
 
         /**
@@ -776,25 +852,6 @@ public class SignalApplication {
                 }
             }
             return report.toString();
-        }
-
-        // Inner class for simulation records
-        public static class SimulationRecord {
-            String symbol;
-            String tradeType;
-            double predictedEntry;
-            double predictedExit;
-            double predictedProfitPct;
-            double actualHigh;
-            double actualLow;
-            String outcome; // "Success" veya "Fail"
-            Date simulationDate;
-
-            @Override
-            public String toString() {
-                return String.format("Symbol: %s | %s | Entry: %.2f | Exit: %.2f | Predicted Profit: %.2f%% | Actual High: %.2f | Actual Low: %.2f | Outcome: %s | Date: %s",
-                        symbol, tradeType, predictedEntry, predictedExit, predictedProfitPct, actualHigh, actualLow, outcome, simulationDate.toString());
-            }
         }
     }
 
